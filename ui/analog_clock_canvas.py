@@ -6,17 +6,19 @@ from datetime import datetime
 from typing import Dict, Iterable, Optional, Tuple
 
 from models.clock_marker import ClockMarker
+from models.clock_theme import ClockTheme
 
 
 class AnalogClockCanvas(tk.Canvas):
     """Canvas widget that draws an analog clock face and hands."""
 
-    def __init__(self, master: tk.Misc, **kwargs: object) -> None:
+    def __init__(self, master: tk.Misc, theme: ClockTheme, **kwargs: object) -> None:
+        self._theme = theme
         super().__init__(
             master,
             width=460,
             height=460,
-            bg="#eef2f3",
+            bg=theme.background_color,
             highlightthickness=0,
             **kwargs,
         )
@@ -26,6 +28,11 @@ class AnalogClockCanvas(tk.Canvas):
         self._last_selected_marker: Optional[ClockMarker] = None
         self._alarm_visible = False
         self.bind("<Configure>", self._handle_resize)
+
+    def set_theme(self, theme: ClockTheme) -> None:
+        self._theme = theme
+        self.configure(bg=theme.background_color)
+        self._draw()
 
     def render(
         self,
@@ -72,8 +79,8 @@ class AnalogClockCanvas(tk.Canvas):
             y - radius,
             x + radius,
             y + radius,
-            fill="#fbfaf7",
-            outline="#1f2933",
+            fill=self._theme.face_color,
+            outline=self._theme.border_color,
             width=4,
         )
         self.create_oval(
@@ -81,7 +88,7 @@ class AnalogClockCanvas(tk.Canvas):
             y - radius * 0.95,
             x + radius * 0.95,
             y + radius * 0.95,
-            outline="#d5ded9",
+            outline=self._theme.inner_border_color,
             width=2,
         )
 
@@ -91,7 +98,7 @@ class AnalogClockCanvas(tk.Canvas):
             outer = self._point_from_angle(center, radius * 0.92, angle)
             inner_radius = radius * (0.86 if minute % 5 == 0 else 0.89)
             inner = self._point_from_angle(center, inner_radius, angle)
-            color = "#25313b" if minute % 5 == 0 else "#9aa8a1"
+            color = self._theme.tick_color if minute % 5 == 0 else self._theme.minor_tick_color
             width = 2 if minute % 5 == 0 else 1
             self.create_line(inner[0], inner[1], outer[0], outer[1], fill=color, width=width)
 
@@ -115,7 +122,7 @@ class AnalogClockCanvas(tk.Canvas):
                     dot_point[1] - 7,
                     dot_point[0] + 7,
                     dot_point[1] + 7,
-                    fill="#2f80ed",
+                    fill=self._theme.selected_marker_color,
                     outline="",
                 )
 
@@ -123,7 +130,7 @@ class AnalogClockCanvas(tk.Canvas):
                 text_point[0],
                 text_point[1],
                 text=marker.label,
-                fill="#111827" if not is_selected else "#0f4aa1",
+                fill=self._theme.marker_color if not is_selected else self._theme.selected_text_color,
                 font=("Segoe UI", 18, "bold"),
             )
 
@@ -133,9 +140,9 @@ class AnalogClockCanvas(tk.Canvas):
         radius: float,
         angles: Dict[str, float],
     ) -> None:
-        self._draw_hand(center, radius * 0.46, angles["hour"], "#111827", 8)
-        self._draw_hand(center, radius * 0.66, angles["minute"], "#263238", 5)
-        self._draw_hand(center, radius * 0.76, angles["second"], "#c62828", 2)
+        self._draw_hand(center, radius * 0.46, angles["hour"], self._theme.hour_hand_color, 8)
+        self._draw_hand(center, radius * 0.66, angles["minute"], self._theme.minute_hand_color, 5)
+        self._draw_hand(center, radius * 0.76, angles["second"], self._theme.second_hand_color, 2)
 
     def _draw_hand(
         self,
@@ -165,8 +172,8 @@ class AnalogClockCanvas(tk.Canvas):
             y - cap_radius,
             x + cap_radius,
             y + cap_radius,
-            fill="#111827",
-            outline="#fbfaf7",
+            fill=self._theme.center_color,
+            outline=self._theme.face_color,
             width=2,
         )
 
@@ -177,14 +184,14 @@ class AnalogClockCanvas(tk.Canvas):
             y - radius * 1.04,
             x + radius * 1.04,
             y + radius * 1.04,
-            outline="#c62828",
+            outline=self._theme.alarm_color,
             width=5,
         )
         self.create_text(
             x,
             y + radius * 0.43,
             text="ALARMA",
-            fill="#c62828",
+            fill=self._theme.alarm_color,
             font=("Segoe UI", 17, "bold"),
         )
 

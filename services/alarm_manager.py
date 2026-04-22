@@ -30,23 +30,27 @@ class AlarmManager:
             raise ValueError("No alarm has been configured.")
         self._alarm.set_enabled(False)
 
-    def check_alarm(self, moment: datetime) -> bool:
+    def snooze_alarm(self, minutes: int, moment: datetime) -> None:
         if self._alarm is None:
-            return False
+            raise ValueError("No alarm has been configured.")
+        self._alarm.snooze(moment, minutes)
+
+    def check_alarm(self, moment: datetime) -> Optional[Alarm]:
+        if self._alarm is None:
+            return None
 
         if self._alarm.should_trigger(moment):
             self._alarm.mark_triggered(moment)
-            self.play_notification_sound()
-            return True
+            return self._alarm
 
-        return False
+        return None
 
     def status_text(self) -> str:
         if self._alarm is None:
             return "Alarma: sin configurar"
 
         state = "activada" if self._alarm.enabled else "desactivada"
-        return f"Alarma {state}: {self._alarm.formatted_time()}"
+        return f"Alarma {state}: {self._alarm.status_detail()}"
 
     def play_notification_sound(self) -> None:
         try:
