@@ -10,6 +10,7 @@ from models.clock_theme import ClockTheme
 from services.alarm_manager import AlarmManager
 from services.clock_engine import ClockEngine
 from services.persistence_service import PersistenceService
+from services.sound_player import AlarmSoundPlayer
 from services.sound_service import SoundService
 from services.theme_manager import ThemeManager
 from services.world_time_service import WorldTimeService
@@ -33,9 +34,10 @@ class ClockApp(tk.Tk):
         self._theme_manager = ThemeManager()
         self._world_time_service = WorldTimeService()
         self._sound_service = SoundService()
+        self._alarm_sound_player = AlarmSoundPlayer()
         self._persistence_service = PersistenceService()
         self._current_theme = self._theme_manager.get_default_theme()
-        self._selected_timezone_entry = self._world_time_service.find_entry("Bogot\u00e1")
+        self._selected_timezone_entry = self._world_time_service.find_entry("Bogotá")
         self._alarm_notice_until = 0.0
         self._notice_showing = False
         self._alarm_popup: AlarmPopup | None = None
@@ -52,6 +54,7 @@ class ClockApp(tk.Tk):
         self._sync_saved_preferences_to_panel()
         self._apply_theme(self._current_theme)
         self._refresh_alarm_panel()
+        self.protocol("WM_DELETE_WINDOW", self._on_app_close)
         self._update_clock()
 
     def _configure_style(self) -> None:
@@ -239,6 +242,7 @@ class ClockApp(tk.Tk):
             for pending_alarm_id in self._pending_alarm_ids
             if pending_alarm_id != alarm_id
         ]
+
         if self._active_alarm_id == alarm_id:
             self._close_alarm_popup()
             self._clear_alarm_notice()
@@ -306,7 +310,10 @@ class ClockApp(tk.Tk):
 
     def _queue_triggered_alarms(self, alarms: tuple[Alarm, ...]) -> None:
         for alarm in alarms:
-            if alarm.alarm_id != self._active_alarm_id and alarm.alarm_id not in self._pending_alarm_ids:
+            if (
+                alarm.alarm_id != self._active_alarm_id
+                and alarm.alarm_id not in self._pending_alarm_ids
+            ):
                 self._pending_alarm_ids.append(alarm.alarm_id)
 
         self._show_next_pending_alarm()
@@ -329,12 +336,16 @@ class ClockApp(tk.Tk):
     def _start_alarm_notice(self, alarm: Alarm) -> None:
         self._alarm_notice_until = time.monotonic() + 20
         self._notice_showing = True
-        self._alarm_manager.play_notification_sound()
+        self._alarm_sound_player.start_loop()
         self.bell()
         self._control_panel.show_alarm_notice(alarm)
         self._show_alarm_popup(alarm)
 
     def _show_alarm_popup(self, alarm: Alarm) -> None:
+        if self._alarm_popup is not None and self._alarm_popup.winfo_exists():
+            self._alarm_popup.lift()
+            return
+
         self._alarm_popup = AlarmPopup(
             self,
             alarm_time=alarm.formatted_time(),
@@ -358,8 +369,11 @@ class ClockApp(tk.Tk):
         self._timer_popup = None
 
     def _close_alarm_popup(self) -> None:
+        self._alarm_sound_player.stop()
+
         if self._alarm_popup is not None and self._alarm_popup.winfo_exists():
             self._alarm_popup.destroy()
+
         self._alarm_popup = None
         self._active_alarm_id = None
 
@@ -414,3 +428,7 @@ class ClockApp(tk.Tk):
             background=theme.background_color,
             foreground=theme.border_color,
         )
+
+    def _on_app_close(self) -> None:
+        self._alarm_sound_player.stop()
+        self.destroy()
