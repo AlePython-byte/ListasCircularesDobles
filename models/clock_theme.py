@@ -17,7 +17,5 @@ class ClockTheme:
     marker_color: str
     tick_color: str
     minor_tick_color: str
-    selected_marker_color: str
-    selected_text_color: str
     center_color: str
     alarm_color: str

@@ -13,7 +13,7 @@ class WorldTimeService:
     def __init__(self) -> None:
         self._entries = (
             WorldClockEntry(
-                city="Bogotá",
+                city="Bogota",
                 country="Colombia",
                 zone_name="America/Bogota",
                 fallback_timezone=timezone(timedelta(hours=-5), "UTC-05:00"),

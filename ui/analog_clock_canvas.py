@@ -25,7 +25,6 @@ class AnalogClockCanvas(tk.Canvas):
         self._last_moment: Optional[datetime] = None
         self._last_angles: Optional[Dict[str, float]] = None
         self._last_markers: Optional[Iterable[ClockMarker]] = None
-        self._last_selected_marker: Optional[ClockMarker] = None
         self._alarm_visible = False
         self.bind("<Configure>", self._handle_resize)
 
@@ -39,13 +38,11 @@ class AnalogClockCanvas(tk.Canvas):
         moment: datetime,
         angles: Dict[str, float],
         markers: Iterable[ClockMarker],
-        selected_marker: Optional[ClockMarker],
         alarm_visible: bool,
     ) -> None:
         self._last_moment = moment
         self._last_angles = angles
         self._last_markers = tuple(markers)
-        self._last_selected_marker = selected_marker
         self._alarm_visible = alarm_visible
         self._draw()
 
@@ -109,28 +106,13 @@ class AnalogClockCanvas(tk.Canvas):
         markers: Iterable[ClockMarker],
     ) -> None:
         for marker in markers:
-            is_selected = (
-                self._last_selected_marker is not None
-                and self._last_selected_marker.hour == marker.hour
-            )
             text_point = self._point_from_angle(center, radius * 0.72, marker.angle_degrees)
-            dot_point = self._point_from_angle(center, radius * 0.82, marker.angle_degrees)
-
-            if is_selected:
-                self.create_oval(
-                    dot_point[0] - 7,
-                    dot_point[1] - 7,
-                    dot_point[0] + 7,
-                    dot_point[1] + 7,
-                    fill=self._theme.selected_marker_color,
-                    outline="",
-                )
 
             self.create_text(
                 text_point[0],
                 text_point[1],
                 text=marker.label,
-                fill=self._theme.marker_color if not is_selected else self._theme.selected_text_color,
+                fill=self._theme.marker_color,
                 font=("Segoe UI", 18, "bold"),
             )
 

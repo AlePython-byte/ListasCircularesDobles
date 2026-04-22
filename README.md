@@ -18,11 +18,14 @@ analog_clock_workshop/
 |   |-- alarm.py
 |   |-- clock_marker.py
 |   |-- clock_theme.py
+|   |-- countdown_timer.py
+|   |-- stopwatch.py
 |   `-- world_clock.py
 |-- services/
 |   |-- __init__.py
 |   |-- alarm_manager.py
 |   |-- clock_engine.py
+|   |-- sound_service.py
 |   |-- theme_manager.py
 |   `-- world_time_service.py
 `-- ui/
@@ -30,87 +33,86 @@ analog_clock_workshop/
     |-- alarm_popup.py
     |-- analog_clock_canvas.py
     |-- app.py
-    `-- control_panel.py
+    |-- control_panel.py
+    |-- countdown_timer_panel.py
+    |-- stopwatch_panel.py
+    `-- timer_popup.py
 ```
 
 ## Architecture
 
 - `data_structures` contains the custom `DoublyCircularLinkedList` and node class.
-- `models` contains domain objects for alarms, markers, themes, and world clocks.
-- `services` contains application logic for time, alarm storage, themes, and time zones.
-- `ui` contains Tkinter widgets for the canvas, control panel, popup, and main window.
+- `models` contains domain objects for alarms, markers, themes, stopwatch,
+  countdown timer, and world clocks.
+- `services` contains application logic for alarm storage, clock calculations,
+  sound, themes, and time zones.
+- `ui` contains Tkinter widgets for the analog clock, notebook control area,
+  stopwatch, countdown timer, and popups.
 - `main.py` is the entry point.
-
-## Object-Oriented Design
-
-The application separates responsibilities into focused classes:
-
-- `ClockEngine` calculates analog hand angles and owns the circular hour marker ring.
-- `AlarmManager` stores multiple alarms and handles enable, disable, delete, snooze,
-  and trigger checks.
-- `WorldTimeService` uses `zoneinfo` to resolve supported time zones.
-- `ThemeManager` exposes predefined visual themes.
-- `AnalogClockCanvas` draws the analog clock using the selected theme.
-- `ControlPanel` displays the right-side selector, alarm form, alarm list, actions,
-  world times, theme selector, and status messages.
-- `AlarmPopup` provides alarm actions when an alarm triggers.
-- `ClockApp` coordinates services and widgets through Tkinter's update loop.
 
 ## User Interface
 
-The layout has two main panels:
+The window uses a two-panel layout:
 
-- Left panel: large analog clock, selected time zone label, and a small reference time.
-- Right panel: time zone selector, alarm creation form, scheduled alarms table,
-  alarm action buttons, world times, theme selector, and status area.
+- Left panel: large analog clock, selected time zone label, and small reference time.
+- Right panel: a `ttk.Notebook` with four tabs:
+  - `Alarmas`: time zone selector, alarm form, scheduled alarms table, and actions.
+  - `Cronometro`: large stopwatch display, circular progress ring, and controls.
+  - `Temporizador`: duration inputs, large countdown display, progress ring, and controls.
+  - `Horas mundiales`: live world times and the theme selector.
 
-The old marker panel was removed from the GUI to keep the interface focused on
-practical controls.
+The notebook keeps the interface focused and avoids one long overloaded control
+column. The default selected tab is `Alarmas`.
+
+## Blue Marker Removal
+
+The old visible selected-marker dot was removed from the analog clock. The clock
+face now shows only the clean circular face, hour labels, tick marks, hands, center
+cap, and alarm alert ring when needed.
 
 ## Doubly Circular Linked List Usage
 
 The 12 major hour positions are still represented as a custom doubly circular
 linked list. `ClockEngine` builds the marker ring in clock order: 12, 1, 2, ...,
-11.
-
-This structure remains meaningful internally:
-
-1. The canvas draws hour labels by traversing the marker ring forward.
-2. The app highlights the current hour marker for the selected time zone by
-   resolving that hour through the same circular marker structure.
-
-The data structure is not exposed as a separate user control anymore, but it still
-models the circular nature of the analog clock face.
-
-## Time Zones
-
-The selected time zone controls the analog clock itself. The app supports:
-
-- Bogota (`America/Bogota`)
-- New York (`America/New_York`)
-- London (`Europe/London`)
-- Tokyo (`Asia/Tokyo`)
-
-The implementation uses Python's standard `zoneinfo` module with safe fixed-offset
-fallbacks if IANA timezone data is unavailable.
+11. The canvas traverses that structure to draw the hour labels, so the data
+structure remains meaningful internally without exposing decorative marker controls.
 
 ## Multiple Alarms
 
 Users can create multiple alarms. Each alarm stores an id, hour, minute, optional
-label, enabled state, last-triggered minute, and snooze target. The scheduled alarms
-panel uses a Tkinter `Treeview` so each saved alarm can be selected, activated,
-deactivated, or deleted independently.
+label, enabled state, last-triggered minute, and optional snooze target. The
+scheduled alarms panel uses a Tkinter `Treeview` so each saved alarm can be
+selected, activated, deactivated, or deleted independently.
 
-When an enabled alarm reaches its configured time in the currently selected time
-zone, the app plays a Python-only notification sound, shows a visual alert on the
-clock, and opens a popup with actions to disable the alarm or snooze it for 5 or
-10 minutes. Trigger keys prevent repeated broken triggers during the same minute.
+When an enabled alarm reaches its configured time in the selected time zone, the
+app plays a standard-library notification sound, shows a visual alert on the clock,
+and opens a popup with actions to disable the alarm or snooze it for 5 or 10
+minutes.
+
+## Stopwatch
+
+`Stopwatch` uses `time.monotonic()` to support start, pause, resume, and reset.
+`StopwatchPanel` displays the elapsed time prominently and draws a circular
+progress ring for the current minute.
+
+## Countdown Timer
+
+`CountdownTimer` stores the configured duration, remaining time, paused state, and
+finish detection. `CountdownTimerPanel` lets the user set minutes and seconds,
+then start, pause, resume, or reset the countdown. When it reaches zero, the app
+plays a sound and shows a Spanish popup.
+
+## Time Zones
+
+The selected time zone controls the analog clock itself. The app supports Bogota,
+New York, London, and Tokyo through Python's standard `zoneinfo` module with safe
+fixed-offset fallbacks.
 
 ## Themes
 
 The analog clock supports predefined themes: classic, dark, blue, and green. Themes
-control the clock face, border, hands, marker colors, selected hour marker, and
-alarm highlight color.
+control the clock face, border, hands, marker colors, center cap, and alarm
+highlight color.
 
 ## How to Run
 

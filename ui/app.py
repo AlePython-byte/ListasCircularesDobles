@@ -7,14 +7,15 @@ from tkinter import ttk
 
 from models.alarm import Alarm
 from models.clock_theme import ClockTheme
-from models.world_clock import WorldClockEntry
 from services.alarm_manager import AlarmManager
 from services.clock_engine import ClockEngine
+from services.sound_service import SoundService
 from services.theme_manager import ThemeManager
 from services.world_time_service import WorldTimeService
 from ui.alarm_popup import AlarmPopup
 from ui.analog_clock_canvas import AnalogClockCanvas
 from ui.control_panel import ControlPanel
+from ui.timer_popup import TimerPopup
 
 
 class ClockApp(tk.Tk):
@@ -30,11 +31,13 @@ class ClockApp(tk.Tk):
         self._alarm_manager = AlarmManager()
         self._theme_manager = ThemeManager()
         self._world_time_service = WorldTimeService()
+        self._sound_service = SoundService()
         self._current_theme = self._theme_manager.get_default_theme()
-        self._selected_timezone_entry = self._world_time_service.find_entry("Bogotá")
+        self._selected_timezone_entry = self._world_time_service.find_entry("Bogota")
         self._alarm_notice_until = 0.0
         self._notice_showing = False
         self._alarm_popup: AlarmPopup | None = None
+        self._timer_popup: TimerPopup | None = None
         self._active_alarm_id: int | None = None
         self._pending_alarm_ids: list[int] = []
 
@@ -94,6 +97,7 @@ class ClockApp(tk.Tk):
             on_delete_alarm=self._delete_alarm,
             on_theme_change=self._change_theme,
             on_timezone_change=self._change_timezone,
+            on_timer_finished=self._handle_timer_finished,
         )
         self._control_panel.grid(row=0, column=1, sticky="ns", padx=(18, 0))
 
@@ -118,7 +122,6 @@ class ClockApp(tk.Tk):
             moment=selected_moment,
             angles=angles,
             markers=self._clock_engine.iter_markers_forward(),
-            selected_marker=self._clock_engine.marker_for_datetime(selected_moment),
             alarm_visible=alarm_visible,
         )
         self.after(200, self._update_clock)
@@ -227,6 +230,11 @@ class ClockApp(tk.Tk):
         self._clock_canvas.set_theme(theme)
         self._control_panel.set_message(f"Tema aplicado: {theme.display_name}")
 
+    def _handle_timer_finished(self) -> None:
+        self._sound_service.play_notification_sound()
+        self.bell()
+        self._show_timer_popup()
+
     def _queue_triggered_alarms(self, alarms: tuple[Alarm, ...]) -> None:
         for alarm in alarms:
             if alarm.alarm_id != self._active_alarm_id and alarm.alarm_id not in self._pending_alarm_ids:
@@ -266,6 +274,19 @@ class ClockApp(tk.Tk):
             on_snooze_five=lambda: self._snooze_active_alarm(5),
             on_snooze_ten=lambda: self._snooze_active_alarm(10),
         )
+
+    def _show_timer_popup(self) -> None:
+        if self._timer_popup is not None and self._timer_popup.winfo_exists():
+            self._timer_popup.lift()
+            return
+
+        self._timer_popup = TimerPopup(self)
+        self._timer_popup.protocol("WM_DELETE_WINDOW", self._close_timer_popup)
+
+    def _close_timer_popup(self) -> None:
+        if self._timer_popup is not None and self._timer_popup.winfo_exists():
+            self._timer_popup.destroy()
+        self._timer_popup = None
 
     def _close_alarm_popup(self) -> None:
         if self._alarm_popup is not None and self._alarm_popup.winfo_exists():

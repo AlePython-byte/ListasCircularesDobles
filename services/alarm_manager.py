@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Dict, Optional, Tuple
 
 from models.alarm import Alarm
+from services.sound_service import SoundService
 
 
 class AlarmManager:
@@ -64,12 +65,7 @@ class AlarmManager:
         return f"{count} alarmas programadas."
 
     def play_notification_sound(self) -> None:
-        try:
-            import winsound
-
-            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-        except Exception:
-            print("\a", end="")
+        SoundService().play_notification_sound()
 
     def _require_alarm(self, alarm_id: int) -> Alarm:
         alarm = self.get_alarm(alarm_id)
