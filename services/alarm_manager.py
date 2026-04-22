@@ -1,56 +1,67 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Dict, Optional, Tuple
 
 from models.alarm import Alarm
 
 
 class AlarmManager:
-    """Coordinates alarm state, validation, and trigger checks."""
+    """Stores alarms and coordinates validation, trigger checks, and actions."""
 
     def __init__(self) -> None:
-        self._alarm: Optional[Alarm] = None
+        self._alarms: Dict[int, Alarm] = {}
+        self._next_id = 1
 
-    @property
-    def alarm(self) -> Optional[Alarm]:
-        return self._alarm
+    def create_alarm(self, hour: int, minute: int, label: str = "") -> Alarm:
+        alarm = Alarm(
+            alarm_id=self._next_id,
+            hour=hour,
+            minute=minute,
+            label=label.strip(),
+            enabled=True,
+        )
+        self._alarms[alarm.alarm_id] = alarm
+        self._next_id += 1
+        return alarm
 
-    def set_alarm(self, hour: int, minute: int) -> Alarm:
-        self._alarm = Alarm(hour=hour, minute=minute, enabled=True)
-        return self._alarm
+    def get_alarms(self) -> Tuple[Alarm, ...]:
+        return tuple(sorted(self._alarms.values(), key=lambda alarm: alarm.alarm_id))
 
-    def enable_alarm(self) -> None:
-        if self._alarm is None:
-            raise ValueError("No alarm has been configured.")
-        self._alarm.set_enabled(True)
+    def get_alarm(self, alarm_id: int) -> Optional[Alarm]:
+        return self._alarms.get(alarm_id)
 
-    def disable_alarm(self) -> None:
-        if self._alarm is None:
-            raise ValueError("No alarm has been configured.")
-        self._alarm.set_enabled(False)
+    def enable_alarm(self, alarm_id: int) -> None:
+        self._require_alarm(alarm_id).set_enabled(True)
 
-    def snooze_alarm(self, minutes: int, moment: datetime) -> None:
-        if self._alarm is None:
-            raise ValueError("No alarm has been configured.")
-        self._alarm.snooze(moment, minutes)
+    def disable_alarm(self, alarm_id: int) -> None:
+        self._require_alarm(alarm_id).set_enabled(False)
 
-    def check_alarm(self, moment: datetime) -> Optional[Alarm]:
-        if self._alarm is None:
-            return None
+    def delete_alarm(self, alarm_id: int) -> None:
+        if alarm_id not in self._alarms:
+            raise ValueError("Alarm does not exist.")
+        del self._alarms[alarm_id]
 
-        if self._alarm.should_trigger(moment):
-            self._alarm.mark_triggered(moment)
-            return self._alarm
+    def snooze_alarm(self, alarm_id: int, minutes: int, moment: datetime) -> None:
+        self._require_alarm(alarm_id).snooze(moment, minutes)
 
-        return None
+    def check_alarms(self, moment: datetime) -> Tuple[Alarm, ...]:
+        triggered_alarms = []
 
-    def status_text(self) -> str:
-        if self._alarm is None:
-            return "Alarma: sin configurar"
+        for alarm in self._alarms.values():
+            if alarm.should_trigger(moment):
+                alarm.mark_triggered(moment)
+                triggered_alarms.append(alarm)
 
-        state = "activada" if self._alarm.enabled else "desactivada"
-        return f"Alarma {state}: {self._alarm.status_detail()}"
+        return tuple(triggered_alarms)
+
+    def summary_text(self) -> str:
+        count = len(self._alarms)
+        if count == 0:
+            return "No hay alarmas programadas."
+        if count == 1:
+            return "1 alarma programada."
+        return f"{count} alarmas programadas."
 
     def play_notification_sound(self) -> None:
         try:
@@ -59,3 +70,9 @@ class AlarmManager:
             winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
         except Exception:
             print("\a", end="")
+
+    def _require_alarm(self, alarm_id: int) -> Alarm:
+        alarm = self.get_alarm(alarm_id)
+        if alarm is None:
+            raise ValueError("Alarm does not exist.")
+        return alarm

@@ -9,8 +9,10 @@ from typing import Optional
 class Alarm:
     """Alarm value object with validation, trigger, and snooze behavior."""
 
+    alarm_id: int
     hour: int
     minute: int
+    label: str = ""
     enabled: bool = True
     last_trigger_key: Optional[str] = None
     snooze_until: Optional[datetime] = None
@@ -23,6 +25,9 @@ class Alarm:
 
     def formatted_time(self) -> str:
         return f"{self.hour:02d}:{self.minute:02d}"
+
+    def display_label(self) -> str:
+        return self.label.strip() or "Sin etiqueta"
 
     def should_trigger(self, moment: datetime) -> bool:
         if not self.enabled:

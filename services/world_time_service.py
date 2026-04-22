@@ -13,6 +13,12 @@ class WorldTimeService:
     def __init__(self) -> None:
         self._entries = (
             WorldClockEntry(
+                city="Bogotá",
+                country="Colombia",
+                zone_name="America/Bogota",
+                fallback_timezone=timezone(timedelta(hours=-5), "UTC-05:00"),
+            ),
+            WorldClockEntry(
                 city="Nueva York",
                 country="Estados Unidos",
                 zone_name="America/New_York",
@@ -32,11 +38,23 @@ class WorldTimeService:
             ),
         )
 
+    def get_entries(self) -> Tuple[WorldClockEntry, ...]:
+        return self._entries
+
+    def find_entry(self, city: str) -> WorldClockEntry:
+        for entry in self._entries:
+            if entry.city == city:
+                return entry
+        raise LookupError("World clock entry was not found.")
+
+    def get_time_for_entry(self, moment: datetime, entry: WorldClockEntry) -> datetime:
+        return moment.astimezone(self.get_timezone(entry))
+
     def get_snapshots(self, moment: datetime) -> Tuple[WorldTimeSnapshot, ...]:
         snapshots = []
 
         for entry in self._entries:
-            local_time = moment.astimezone(self._get_timezone(entry))
+            local_time = self.get_time_for_entry(moment, entry)
             snapshots.append(
                 WorldTimeSnapshot(
                     city=entry.city,
@@ -49,7 +67,7 @@ class WorldTimeService:
 
         return tuple(snapshots)
 
-    def _get_timezone(self, entry: WorldClockEntry) -> tzinfo:
+    def get_timezone(self, entry: WorldClockEntry) -> tzinfo:
         try:
             return ZoneInfo(entry.zone_name)
         except ZoneInfoNotFoundError:

@@ -12,6 +12,7 @@ class AlarmPopup(tk.Toplevel):
         self,
         master: tk.Misc,
         alarm_time: str,
+        alarm_label: str,
         on_disable: Callable[[], None],
         on_snooze_five: Callable[[], None],
         on_snooze_ten: Callable[[], None],
@@ -27,12 +28,12 @@ class AlarmPopup(tk.Toplevel):
         self._on_snooze_five = on_snooze_five
         self._on_snooze_ten = on_snooze_ten
 
-        self._build_layout(alarm_time)
+        self._build_layout(alarm_time, alarm_label)
         self._center_on_master(master)
         self.lift()
         self.focus_force()
 
-    def _build_layout(self, alarm_time: str) -> None:
+    def _build_layout(self, alarm_time: str, alarm_label: str) -> None:
         container = ttk.Frame(self, padding=20)
         container.grid(row=0, column=0, sticky="nsew")
         container.columnconfigure(0, weight=1)
@@ -47,7 +48,7 @@ class AlarmPopup(tk.Toplevel):
 
         message = ttk.Label(
             container,
-            text=f"Es la hora programada: {alarm_time}",
+            text=f"Es la hora programada: {alarm_time}\n{alarm_label}",
             font=("Segoe UI", 11),
         )
         message.grid(row=1, column=0, sticky="w", pady=(0, 16))

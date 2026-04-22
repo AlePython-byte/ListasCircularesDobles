@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from datetime import tzinfo
 from typing import Dict, Generator, Optional
 
 from data_structures.doubly_circular_linked_list import (
@@ -17,8 +18,8 @@ class ClockEngine:
         self._markers: DoublyCircularLinkedList[ClockMarker] = DoublyCircularLinkedList()
         self._build_hour_markers()
 
-    def get_current_time(self) -> datetime:
-        return datetime.now()
+    def get_current_time(self, timezone_info: Optional[tzinfo] = None) -> datetime:
+        return datetime.now(timezone_info)
 
     def calculate_hand_angles(self, moment: datetime) -> Dict[str, float]:
         second_value = moment.second + moment.microsecond / 1_000_000
