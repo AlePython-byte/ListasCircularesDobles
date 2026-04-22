@@ -87,3 +87,9 @@ class ThemeManager:
             if theme.display_name == display_name:
                 return theme
         raise LookupError("Theme was not found.")
+
+    def find_by_key(self, key: str) -> ClockTheme:
+        for theme in self._themes:
+            if theme.key == key:
+                return theme
+        raise LookupError("Theme was not found.")

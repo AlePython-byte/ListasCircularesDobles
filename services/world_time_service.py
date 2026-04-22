@@ -13,7 +13,7 @@ class WorldTimeService:
     def __init__(self) -> None:
         self._entries = (
             WorldClockEntry(
-                city="Bogota",
+                city="Bogot\u00e1",
                 country="Colombia",
                 zone_name="America/Bogota",
                 fallback_timezone=timezone(timedelta(hours=-5), "UTC-05:00"),
@@ -43,7 +43,7 @@ class WorldTimeService:
 
     def find_entry(self, city: str) -> WorldClockEntry:
         for entry in self._entries:
-            if entry.city == city:
+            if entry.city == city or (city == "Bogota" and entry.zone_name == "America/Bogota"):
                 return entry
         raise LookupError("World clock entry was not found.")
 

@@ -8,6 +8,7 @@ from models.alarm import Alarm
 from models.clock_theme import ClockTheme
 from models.world_clock import WorldClockEntry, WorldTimeSnapshot
 from ui.countdown_timer_panel import CountdownTimerPanel
+from ui.numeric_validation import NumericFieldValidator
 from ui.stopwatch_panel import StopwatchPanel
 
 
@@ -37,35 +38,60 @@ class ControlPanel(ttk.Frame):
         self._on_theme_change = on_theme_change
         self._on_timezone_change = on_timezone_change
         self._on_timer_finished = on_timer_finished
+        self._validator = NumericFieldValidator(self)
 
         self._hour_var = tk.StringVar(value="07")
         self._minute_var = tk.StringVar(value="00")
         self._label_var = tk.StringVar(value="")
         self._alarm_summary_var = tk.StringVar(value="No hay alarmas programadas.")
+        self._next_alarm_var = tk.StringVar(value="Proxima alarma: ninguna")
         self._message_var = tk.StringVar(value="Listo")
         self._theme_var = tk.StringVar(value=self._themes[0].display_name)
         self._timezone_var = tk.StringVar(value=self._timezone_entries[0].city)
         self._world_time_vars: Dict[str, tk.StringVar] = {}
+        self._alarm_enabled_by_id: Dict[int, bool] = {}
         self._alarm_tree: Optional[ttk.Treeview] = None
+        self._add_alarm_button: ttk.Button | None = None
+        self._enable_alarm_button: ttk.Button | None = None
+        self._disable_alarm_button: ttk.Button | None = None
+        self._delete_alarm_button: ttk.Button | None = None
 
         self._build_layout()
+        self._bind_alarm_validation()
+        self._update_alarm_button_states()
 
     def get_alarm_values(self) -> Tuple[int, int, str]:
-        try:
-            hour = int(self._hour_var.get())
-            minute = int(self._minute_var.get())
-        except ValueError as exc:
-            raise ValueError("Use valores numericos para la alarma.") from exc
+        raw_hour = self._hour_var.get().strip()
+        raw_minute = self._minute_var.get().strip()
+
+        if raw_hour == "" or raw_minute == "":
+            raise ValueError("Complete la hora y el minuto de la alarma.")
+        if not raw_hour.isdigit() or not raw_minute.isdigit():
+            raise ValueError("Use valores numericos para la alarma.")
+
+        hour = int(raw_hour)
+        minute = int(raw_minute)
 
         if not 0 <= hour <= 23:
             raise ValueError("La hora debe estar entre 0 y 23.")
         if not 0 <= minute <= 59:
             raise ValueError("El minuto debe estar entre 0 y 59.")
 
+        self._hour_var.set(f"{hour:02d}")
+        self._minute_var.set(f"{minute:02d}")
         return hour, minute, self._label_var.get().strip()
 
     def set_alarm_summary(self, text: str) -> None:
         self._alarm_summary_var.set(text)
+
+    def set_next_alarm_text(self, text: str) -> None:
+        self._next_alarm_var.set(text)
+
+    def set_theme_selection(self, display_name: str) -> None:
+        self._theme_var.set(display_name)
+
+    def set_timezone_selection(self, city: str) -> None:
+        self._timezone_var.set(city)
 
     def set_message(self, text: str) -> None:
         self._message_var.set(text)
@@ -83,11 +109,13 @@ class ControlPanel(ttk.Frame):
             return
 
         selected_id = self.get_selected_alarm_id()
+        self._alarm_enabled_by_id = {}
         for item_id in self._alarm_tree.get_children():
             self._alarm_tree.delete(item_id)
 
         for alarm in alarms:
             item_id = str(alarm.alarm_id)
+            self._alarm_enabled_by_id[alarm.alarm_id] = alarm.enabled
             self._alarm_tree.insert(
                 "",
                 tk.END,
@@ -101,6 +129,12 @@ class ControlPanel(ttk.Frame):
 
         if selected_id is not None and self._alarm_tree.exists(str(selected_id)):
             self._alarm_tree.selection_set(str(selected_id))
+        else:
+            current_selection = self._alarm_tree.selection()
+            if current_selection:
+                self._alarm_tree.selection_remove(current_selection)
+
+        self._update_alarm_button_states()
 
     def update_world_times(self, snapshots: Iterable[WorldTimeSnapshot]) -> None:
         for snapshot in snapshots:
@@ -169,27 +203,51 @@ class ControlPanel(ttk.Frame):
         form_frame = ttk.LabelFrame(parent, text="Agregar alarma", padding=10)
         form_frame.grid(row=row, column=0, sticky="ew", pady=(0, 10))
         form_frame.columnconfigure((0, 1), weight=1)
+        hour_validation = self._validator.create_range_command(0, 23, 2)
+        minute_validation = self._validator.create_range_command(0, 59, 2)
 
         ttk.Label(form_frame, text="Hora").grid(row=0, column=0, sticky="w")
         ttk.Label(form_frame, text="Minuto").grid(row=0, column=1, sticky="w")
 
-        ttk.Spinbox(
+        hour_spinbox = ttk.Spinbox(
             form_frame,
             from_=0,
             to=23,
             textvariable=self._hour_var,
             width=6,
             format="%02.0f",
-        ).grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(3, 8))
+            validate="key",
+            validatecommand=(hour_validation, "%P"),
+        )
+        hour_spinbox.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(3, 8))
 
-        ttk.Spinbox(
+        minute_spinbox = ttk.Spinbox(
             form_frame,
             from_=0,
             to=59,
             textvariable=self._minute_var,
             width=6,
             format="%02.0f",
-        ).grid(row=1, column=1, sticky="ew", pady=(3, 8))
+            validate="key",
+            validatecommand=(minute_validation, "%P"),
+        )
+        minute_spinbox.grid(row=1, column=1, sticky="ew", pady=(3, 8))
+        self._validator.attach_focus_normalizer(
+            hour_spinbox,
+            self._hour_var,
+            0,
+            23,
+            self.set_message,
+            allow_empty_as_zero=False,
+        )
+        self._validator.attach_focus_normalizer(
+            minute_spinbox,
+            self._minute_var,
+            0,
+            59,
+            self.set_message,
+            allow_empty_as_zero=False,
+        )
 
         ttk.Label(form_frame, text="Etiqueta").grid(
             row=2,
@@ -205,17 +263,18 @@ class ControlPanel(ttk.Frame):
             pady=(3, 8),
         )
 
-        ttk.Button(
+        self._add_alarm_button = ttk.Button(
             form_frame,
             text="Agregar alarma",
             command=self._handle_add_alarm,
-        ).grid(row=4, column=0, columnspan=2, sticky="ew")
+        )
+        self._add_alarm_button.grid(row=4, column=0, columnspan=2, sticky="ew")
 
     def _build_alarm_list_frame(self, parent: ttk.Frame, row: int) -> None:
         list_frame = ttk.LabelFrame(parent, text="Alarmas programadas", padding=10)
         list_frame.grid(row=row, column=0, sticky="nsew", pady=(0, 10))
         list_frame.columnconfigure(0, weight=1)
-        list_frame.rowconfigure(1, weight=1)
+        list_frame.rowconfigure(2, weight=1)
 
         ttk.Label(list_frame, textvariable=self._alarm_summary_var).grid(
             row=0,
@@ -223,6 +282,11 @@ class ControlPanel(ttk.Frame):
             sticky="w",
             pady=(0, 6),
         )
+        ttk.Label(
+            list_frame,
+            textvariable=self._next_alarm_var,
+            font=("Segoe UI", 9, "bold"),
+        ).grid(row=1, column=0, sticky="w", pady=(0, 6))
 
         columns = ("time", "label", "status")
         self._alarm_tree = ttk.Treeview(
@@ -238,25 +302,44 @@ class ControlPanel(ttk.Frame):
         self._alarm_tree.column("time", width=58, anchor=tk.CENTER, stretch=False)
         self._alarm_tree.column("label", width=112, anchor=tk.W)
         self._alarm_tree.column("status", width=92, anchor=tk.W)
-        self._alarm_tree.grid(row=1, column=0, sticky="nsew")
+        self._alarm_tree.grid(row=2, column=0, sticky="nsew")
+        self._alarm_tree.bind(
+            "<<TreeviewSelect>>",
+            lambda _event: self._update_alarm_button_states(),
+        )
 
         action_frame = ttk.Frame(list_frame)
-        action_frame.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        action_frame.grid(row=3, column=0, sticky="ew", pady=(8, 0))
         action_frame.columnconfigure((0, 1, 2), weight=1)
 
-        ttk.Button(action_frame, text="Activar", command=self._handle_enable_alarm).grid(
+        self._enable_alarm_button = ttk.Button(
+            action_frame,
+            text="Activar",
+            command=self._handle_enable_alarm,
+        )
+        self._enable_alarm_button.grid(
             row=0,
             column=0,
             sticky="ew",
             padx=(0, 6),
         )
-        ttk.Button(action_frame, text="Desactivar", command=self._handle_disable_alarm).grid(
+        self._disable_alarm_button = ttk.Button(
+            action_frame,
+            text="Desactivar",
+            command=self._handle_disable_alarm,
+        )
+        self._disable_alarm_button.grid(
             row=0,
             column=1,
             sticky="ew",
             padx=(0, 6),
         )
-        ttk.Button(action_frame, text="Eliminar", command=self._handle_delete_alarm).grid(
+        self._delete_alarm_button = ttk.Button(
+            action_frame,
+            text="Eliminar",
+            command=self._handle_delete_alarm,
+        )
+        self._delete_alarm_button.grid(
             row=0,
             column=2,
             sticky="ew",
@@ -338,6 +421,32 @@ class ControlPanel(ttk.Frame):
 
     def _handle_timezone_change(self, _event: tk.Event) -> None:
         self._on_timezone_change(self._timezone_var.get())
+
+    def _bind_alarm_validation(self) -> None:
+        for variable in (self._hour_var, self._minute_var):
+            variable.trace_add("write", lambda *_args: self._update_alarm_button_states())
+
+    def _update_alarm_button_states(self) -> None:
+        self._set_button_state(self._add_alarm_button, self._is_alarm_input_valid())
+        selected_id = self.get_selected_alarm_id()
+        has_selection = selected_id is not None
+        selected_enabled = self._alarm_enabled_by_id.get(selected_id, False)
+        self._set_button_state(self._enable_alarm_button, has_selection and not selected_enabled)
+        self._set_button_state(self._disable_alarm_button, has_selection and selected_enabled)
+        self._set_button_state(self._delete_alarm_button, has_selection)
+
+    def _is_alarm_input_valid(self) -> bool:
+        hour = self._hour_var.get().strip()
+        minute = self._minute_var.get().strip()
+        if hour == "" or minute == "":
+            return False
+        if not hour.isdigit() or not minute.isdigit():
+            return False
+        return 0 <= int(hour) <= 23 and 0 <= int(minute) <= 59
+
+    def _set_button_state(self, button: ttk.Button | None, enabled: bool) -> None:
+        if button is not None:
+            button.configure(state=tk.NORMAL if enabled else tk.DISABLED)
 
     def _format_alarm_status(self, alarm: Alarm) -> str:
         if not alarm.enabled:

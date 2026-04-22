@@ -9,6 +9,7 @@ from models.alarm import Alarm
 from models.clock_theme import ClockTheme
 from services.alarm_manager import AlarmManager
 from services.clock_engine import ClockEngine
+from services.persistence_service import PersistenceService
 from services.sound_service import SoundService
 from services.theme_manager import ThemeManager
 from services.world_time_service import WorldTimeService
@@ -32,8 +33,9 @@ class ClockApp(tk.Tk):
         self._theme_manager = ThemeManager()
         self._world_time_service = WorldTimeService()
         self._sound_service = SoundService()
+        self._persistence_service = PersistenceService()
         self._current_theme = self._theme_manager.get_default_theme()
-        self._selected_timezone_entry = self._world_time_service.find_entry("Bogota")
+        self._selected_timezone_entry = self._world_time_service.find_entry("Bogot\u00e1")
         self._alarm_notice_until = 0.0
         self._notice_showing = False
         self._alarm_popup: AlarmPopup | None = None
@@ -44,8 +46,10 @@ class ClockApp(tk.Tk):
         self._selected_zone_var = tk.StringVar()
         self._selected_time_var = tk.StringVar()
 
+        self._load_persisted_state()
         self._configure_style()
         self._build_layout()
+        self._sync_saved_preferences_to_panel()
         self._apply_theme(self._current_theme)
         self._refresh_alarm_panel()
         self._update_clock()
@@ -55,6 +59,62 @@ class ClockApp(tk.Tk):
         self._style.theme_use("clam")
         self._style.configure("TButton", padding=(10, 6))
         self._style.configure("TSpinbox", padding=4)
+
+    def _load_persisted_state(self) -> None:
+        state = self._persistence_service.load_state()
+
+        self._load_persisted_theme(state.get("selected_theme_key"))
+        self._load_persisted_timezone(state.get("selected_timezone_city"))
+        self._load_persisted_alarms(state.get("alarms", []))
+
+    def _load_persisted_theme(self, theme_key: object) -> None:
+        if not isinstance(theme_key, str):
+            return
+
+        try:
+            self._current_theme = self._theme_manager.find_by_key(theme_key)
+        except LookupError:
+            return
+
+    def _load_persisted_timezone(self, city: object) -> None:
+        if not isinstance(city, str):
+            return
+
+        try:
+            self._selected_timezone_entry = self._world_time_service.find_entry(city)
+        except LookupError:
+            return
+
+    def _load_persisted_alarms(self, alarm_data: object) -> None:
+        if not isinstance(alarm_data, list):
+            return
+
+        alarms = []
+        for item in alarm_data:
+            if not isinstance(item, dict):
+                continue
+            try:
+                alarms.append(Alarm.from_dict(item))
+            except (KeyError, TypeError, ValueError):
+                continue
+
+        self._alarm_manager.load_alarms(alarms)
+
+    def _sync_saved_preferences_to_panel(self) -> None:
+        self._control_panel.set_theme_selection(self._current_theme.display_name)
+        self._control_panel.set_timezone_selection(self._selected_timezone_entry.city)
+
+    def _save_persisted_state(self) -> None:
+        self._persistence_service.save_state(
+            {
+                "selected_theme_key": self._current_theme.key,
+                "selected_timezone_city": self._selected_timezone_entry.city,
+                "alarms": [
+                    alarm.to_dict()
+                    for alarm in self._alarm_manager.get_alarms()
+                ],
+            }
+        )
 
     def _build_layout(self) -> None:
         self._container = ttk.Frame(self, padding=18)
@@ -108,6 +168,7 @@ class ClockApp(tk.Tk):
 
         if triggered_alarms:
             self._queue_triggered_alarms(triggered_alarms)
+            self._save_persisted_state()
 
         alarm_visible = time.monotonic() < self._alarm_notice_until
         if self._notice_showing and not alarm_visible and self._alarm_popup is None:
@@ -115,6 +176,7 @@ class ClockApp(tk.Tk):
             self._notice_showing = False
 
         self._update_selected_time_labels(selected_moment)
+        self._control_panel.set_next_alarm_text(self._next_alarm_text())
         self._control_panel.update_world_times(
             self._world_time_service.get_snapshots(datetime.now().astimezone())
         )
@@ -137,6 +199,7 @@ class ClockApp(tk.Tk):
         self._control_panel.set_message(
             f"Alarma agregada: {alarm.formatted_time()} - {alarm.display_label()}"
         )
+        self._save_persisted_state()
 
     def _enable_alarm(self, alarm_id: int) -> None:
         try:
@@ -147,6 +210,7 @@ class ClockApp(tk.Tk):
 
         self._refresh_alarm_panel()
         self._control_panel.set_message("Alarma activada.")
+        self._save_persisted_state()
 
     def _disable_alarm(self, alarm_id: int) -> None:
         try:
@@ -161,6 +225,7 @@ class ClockApp(tk.Tk):
 
         self._refresh_alarm_panel()
         self._control_panel.set_message("Alarma desactivada.")
+        self._save_persisted_state()
 
     def _delete_alarm(self, alarm_id: int) -> None:
         try:
@@ -180,6 +245,7 @@ class ClockApp(tk.Tk):
 
         self._refresh_alarm_panel()
         self._control_panel.set_message("Alarma eliminada.")
+        self._save_persisted_state()
 
     def _disable_active_alarm(self) -> None:
         if self._active_alarm_id is None:
@@ -206,6 +272,7 @@ class ClockApp(tk.Tk):
         self._clear_alarm_notice()
         self._refresh_alarm_panel()
         self._control_panel.set_message(f"Alarma postergada {minutes} minutos.")
+        self._save_persisted_state()
         self._show_next_pending_alarm()
 
     def _change_timezone(self, city: str) -> None:
@@ -217,6 +284,7 @@ class ClockApp(tk.Tk):
 
         self._update_selected_time_labels(self._get_selected_moment())
         self._control_panel.set_message(f"Zona seleccionada: {city}")
+        self._save_persisted_state()
 
     def _change_theme(self, display_name: str) -> None:
         try:
@@ -229,6 +297,7 @@ class ClockApp(tk.Tk):
         self._apply_theme(theme)
         self._clock_canvas.set_theme(theme)
         self._control_panel.set_message(f"Tema aplicado: {theme.display_name}")
+        self._save_persisted_state()
 
     def _handle_timer_finished(self) -> None:
         self._sound_service.play_notification_sound()
@@ -302,6 +371,16 @@ class ClockApp(tk.Tk):
     def _refresh_alarm_panel(self) -> None:
         self._control_panel.update_alarms(self._alarm_manager.get_alarms())
         self._control_panel.set_alarm_summary(self._alarm_manager.summary_text())
+        self._control_panel.set_next_alarm_text(self._next_alarm_text())
+
+    def _next_alarm_text(self) -> str:
+        next_alarm = self._alarm_manager.next_active_alarm(self._get_selected_moment())
+        if next_alarm is None:
+            return "Proxima alarma: ninguna"
+        return (
+            f"Proxima alarma: {next_alarm.formatted_time()} - "
+            f"{next_alarm.display_label()}"
+        )
 
     def _get_selected_moment(self) -> datetime:
         timezone_info = self._world_time_service.get_timezone(self._selected_timezone_entry)

@@ -14,7 +14,12 @@ class StopwatchPanel(ttk.Frame):
         self._stopwatch = Stopwatch()
         self._time_var = tk.StringVar(value="00:00:00.0")
         self._status_var = tk.StringVar(value="Listo")
+        self._start_button: ttk.Button | None = None
+        self._pause_button: ttk.Button | None = None
+        self._resume_button: ttk.Button | None = None
+        self._reset_button: ttk.Button | None = None
         self._build_layout()
+        self._update_button_states()
         self._update_display()
 
     def _build_layout(self) -> None:
@@ -56,26 +61,30 @@ class StopwatchPanel(ttk.Frame):
         button_frame.grid(row=4, column=0, sticky="ew")
         button_frame.columnconfigure((0, 1), weight=1)
 
-        ttk.Button(button_frame, text="Iniciar", command=self._start).grid(
+        self._start_button = ttk.Button(button_frame, text="Iniciar", command=self._start)
+        self._start_button.grid(
             row=0,
             column=0,
             sticky="ew",
             padx=(0, 8),
             pady=(0, 8),
         )
-        ttk.Button(button_frame, text="Pausar", command=self._pause).grid(
+        self._pause_button = ttk.Button(button_frame, text="Pausar", command=self._pause)
+        self._pause_button.grid(
             row=0,
             column=1,
             sticky="ew",
             pady=(0, 8),
         )
-        ttk.Button(button_frame, text="Reanudar", command=self._resume).grid(
+        self._resume_button = ttk.Button(button_frame, text="Reanudar", command=self._resume)
+        self._resume_button.grid(
             row=1,
             column=0,
             sticky="ew",
             padx=(0, 8),
         )
-        ttk.Button(button_frame, text="Reiniciar", command=self._reset).grid(
+        self._reset_button = ttk.Button(button_frame, text="Reiniciar", command=self._reset)
+        self._reset_button.grid(
             row=1,
             column=1,
             sticky="ew",
@@ -84,23 +93,38 @@ class StopwatchPanel(ttk.Frame):
     def _start(self) -> None:
         self._stopwatch.start()
         self._status_var.set("Cron\u00f3metro en marcha.")
+        self._update_button_states()
 
     def _pause(self) -> None:
         self._stopwatch.pause()
         self._status_var.set("Cron\u00f3metro pausado.")
+        self._update_button_states()
 
     def _resume(self) -> None:
         self._stopwatch.resume()
         self._status_var.set("Cron\u00f3metro en marcha.")
+        self._update_button_states()
 
     def _reset(self) -> None:
         self._stopwatch.reset()
         self._status_var.set("Listo")
+        self._update_button_states()
 
     def _update_display(self) -> None:
         self._time_var.set(self._stopwatch.formatted_time())
         self._draw_progress(self._stopwatch.progress_fraction())
         self.after(100, self._update_display)
+
+    def _update_button_states(self) -> None:
+        state = self._stopwatch.state
+        self._set_button_state(self._start_button, state == "idle")
+        self._set_button_state(self._pause_button, state == "running")
+        self._set_button_state(self._resume_button, state == "paused")
+        self._set_button_state(self._reset_button, state in ("running", "paused"))
+
+    def _set_button_state(self, button: ttk.Button | None, enabled: bool) -> None:
+        if button is not None:
+            button.configure(state=tk.NORMAL if enabled else tk.DISABLED)
 
     def _draw_progress(self, fraction: float) -> None:
         self._progress_canvas.delete("all")

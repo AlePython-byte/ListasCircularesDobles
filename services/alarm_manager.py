@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Dict, Optional, Tuple
+from typing import Dict, Iterable, Optional, Tuple
 
 from models.alarm import Alarm
 from services.sound_service import SoundService
@@ -25,6 +25,16 @@ class AlarmManager:
         self._alarms[alarm.alarm_id] = alarm
         self._next_id += 1
         return alarm
+
+    def load_alarms(self, alarms: Iterable[Alarm]) -> None:
+        self._alarms = {}
+        max_id = 0
+
+        for alarm in alarms:
+            self._alarms[alarm.alarm_id] = alarm
+            max_id = max(max_id, alarm.alarm_id)
+
+        self._next_id = max_id + 1
 
     def get_alarms(self) -> Tuple[Alarm, ...]:
         return tuple(sorted(self._alarms.values(), key=lambda alarm: alarm.alarm_id))
@@ -63,6 +73,24 @@ class AlarmManager:
         if count == 1:
             return "1 alarma programada."
         return f"{count} alarmas programadas."
+
+    def next_active_alarm(self, moment: Optional[datetime] = None) -> Optional[Alarm]:
+        active_alarms = [alarm for alarm in self._alarms.values() if alarm.enabled]
+        if not active_alarms:
+            return None
+        if moment is None:
+            return min(active_alarms, key=lambda alarm: (alarm.hour, alarm.minute, alarm.alarm_id))
+
+        current_seconds = moment.hour * 3600 + moment.minute * 60 + moment.second
+
+        def seconds_until_alarm(alarm: Alarm) -> tuple[int, int]:
+            alarm_seconds = alarm.hour * 3600 + alarm.minute * 60
+            seconds_until = alarm_seconds - current_seconds
+            if seconds_until <= 0:
+                seconds_until += 24 * 3600
+            return seconds_until, alarm.alarm_id
+
+        return min(active_alarms, key=seconds_until_alarm)
 
     def play_notification_sound(self) -> None:
         SoundService().play_notification_sound()

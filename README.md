@@ -10,6 +10,7 @@ analog_clock_workshop/
 |-- main.py
 |-- requirements.txt
 |-- README.md
+|-- .gitignore
 |-- data_structures/
 |   |-- __init__.py
 |   `-- doubly_circular_linked_list.py
@@ -25,6 +26,7 @@ analog_clock_workshop/
 |   |-- __init__.py
 |   |-- alarm_manager.py
 |   |-- clock_engine.py
+|   |-- persistence_service.py
 |   |-- sound_service.py
 |   |-- theme_manager.py
 |   `-- world_time_service.py
@@ -35,6 +37,7 @@ analog_clock_workshop/
     |-- app.py
     |-- control_panel.py
     |-- countdown_timer_panel.py
+    |-- numeric_validation.py
     |-- stopwatch_panel.py
     `-- timer_popup.py
 ```
@@ -45,7 +48,7 @@ analog_clock_workshop/
 - `models` contains domain objects for alarms, markers, themes, stopwatch,
   countdown timer, and world clocks.
 - `services` contains application logic for alarm storage, clock calculations,
-  sound, themes, and time zones.
+  JSON persistence, sound, themes, and time zones.
 - `ui` contains Tkinter widgets for the analog clock, notebook control area,
   stopwatch, countdown timer, and popups.
 - `main.py` is the entry point.
@@ -56,7 +59,8 @@ The window uses a two-panel layout:
 
 - Left panel: large analog clock, selected time zone label, and small reference time.
 - Right panel: a `ttk.Notebook` with four tabs:
-  - `Alarmas`: time zone selector, alarm form, scheduled alarms table, and actions.
+  - `Alarmas`: time zone selector, alarm form, next-alarm indicator,
+    scheduled alarms table, and actions.
   - `Cronometro`: large stopwatch display, circular progress ring, and controls.
   - `Temporizador`: duration inputs, large countdown display, progress ring, and controls.
   - `Horas mundiales`: live world times and the theme selector.
@@ -89,6 +93,26 @@ app plays a standard-library notification sound, shows a visual alert on the clo
 and opens a popup with actions to disable the alarm or snooze it for 5 or 10
 minutes.
 
+## Numeric Validation
+
+Editable numeric fields use Tkinter validation commands from
+`NumericFieldValidator`. Alarm hours accept only values from 0 to 23, and alarm
+minutes accept only values from 0 to 59. Timer minutes and seconds accept only
+values from 0 to 59, while timer hours accept non-negative values up to 999.
+
+The app validates during typing where possible and validates again before actions
+such as adding an alarm or starting the timer. Values are normalized to two digits
+when appropriate.
+
+## Persistence
+
+`PersistenceService` saves user data to `data/app_state.json` using JSON. The app
+loads saved alarms, enabled states, labels, selected time zone, and selected theme
+on startup. Missing or corrupted JSON is handled gracefully by starting with
+defaults instead of crashing.
+
+The generated state file is ignored by Git because it is user data.
+
 ## Stopwatch
 
 `Stopwatch` uses `time.monotonic()` to support start, pause, resume, and reset.
@@ -98,9 +122,9 @@ progress ring for the current minute.
 ## Countdown Timer
 
 `CountdownTimer` stores the configured duration, remaining time, paused state, and
-finish detection. `CountdownTimerPanel` lets the user set minutes and seconds,
-then start, pause, resume, or reset the countdown. When it reaches zero, the app
-plays a sound and shows a Spanish popup.
+finish detection. `CountdownTimerPanel` lets the user set hours, minutes, and
+seconds, then start, pause, resume, or reset the countdown. When it reaches zero,
+the app plays a sound and shows a Spanish popup.
 
 ## Time Zones
 

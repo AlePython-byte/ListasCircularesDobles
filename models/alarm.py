@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass
@@ -61,6 +61,39 @@ class Alarm:
         if self.snooze_until is not None:
             return f"postergada hasta {self.snooze_until.strftime('%H:%M')}"
         return f"programada para {self.formatted_time()}"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "alarm_id": self.alarm_id,
+            "hour": self.hour,
+            "minute": self.minute,
+            "label": self.label,
+            "enabled": self.enabled,
+            "last_trigger_key": self.last_trigger_key,
+            "snooze_until": self.snooze_until.isoformat() if self.snooze_until else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Alarm":
+        snooze_until = data.get("snooze_until")
+        parsed_snooze = None
+        if isinstance(snooze_until, str) and snooze_until:
+            try:
+                parsed_snooze = datetime.fromisoformat(snooze_until)
+            except ValueError:
+                parsed_snooze = None
+            if parsed_snooze is not None and parsed_snooze.tzinfo is None:
+                parsed_snooze = None
+
+        return cls(
+            alarm_id=int(data["alarm_id"]),
+            hour=int(data["hour"]),
+            minute=int(data["minute"]),
+            label=str(data.get("label", "")),
+            enabled=bool(data.get("enabled", True)),
+            last_trigger_key=data.get("last_trigger_key"),
+            snooze_until=parsed_snooze,
+        )
 
     def _trigger_key(self, moment: datetime) -> str:
         return moment.strftime("%Y-%m-%d %H:%M")

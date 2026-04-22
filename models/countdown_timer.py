@@ -21,13 +21,15 @@ class CountdownTimer:
     def duration_seconds(self) -> int:
         return self._duration_seconds
 
-    def set_duration(self, minutes: int, seconds: int) -> None:
-        if minutes < 0 or seconds < 0:
+    def set_duration(self, hours: int, minutes: int, seconds: int) -> None:
+        if hours < 0 or minutes < 0 or seconds < 0:
             raise ValueError("Timer values must be non-negative.")
+        if minutes > 59:
+            raise ValueError("Minutes must be between 0 and 59.")
         if seconds > 59:
             raise ValueError("Seconds must be between 0 and 59.")
 
-        total_seconds = minutes * 60 + seconds
+        total_seconds = hours * 3600 + minutes * 60 + seconds
         if total_seconds <= 0:
             raise ValueError("Timer duration must be greater than zero.")
 
@@ -92,6 +94,7 @@ class CountdownTimer:
 
     def formatted_time(self) -> str:
         total_seconds = int(self.remaining_seconds() + 0.999)
-        minutes = total_seconds // 60
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
         seconds = total_seconds % 60
-        return f"{minutes:02d}:{seconds:02d}"
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
