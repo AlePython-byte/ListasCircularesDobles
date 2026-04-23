@@ -55,8 +55,12 @@ class ControlPanel(ttk.Frame):
         self._hour_var = tk.StringVar(value="07")
         self._minute_var = tk.StringVar(value="00")
         self._label_var = tk.StringVar(value="")
+        self._alarm_form_help_var = tk.StringVar(
+            value="Complete la hora; la etiqueta es opcional."
+        )
         self._alarm_summary_var = tk.StringVar(value="No hay alarmas programadas.")
         self._next_alarm_var = tk.StringVar(value="Proxima alarma: ninguna")
+        self._selected_alarm_var = tk.StringVar(value="Seleccione una alarma para editarla.")
         self._message_var = tk.StringVar(value="Listo")
         self._theme_var = tk.StringVar(value=self._themes[0].display_name)
         self._timezone_var = tk.StringVar(value=self._timezone_entries[0].city)
@@ -74,6 +78,7 @@ class ControlPanel(ttk.Frame):
 
         self._build_layout()
         self._bind_alarm_validation()
+        self._set_alarm_form_mode(editing=False)
         self._update_alarm_button_states()
 
     def get_alarm_values(self) -> Tuple[int, int, str]:
@@ -249,8 +254,14 @@ class ControlPanel(ttk.Frame):
         hour_validation = self._validator.create_range_command(0, 23, 2)
         minute_validation = self._validator.create_range_command(0, 59, 2)
 
-        ttk.Label(form_frame, text="Hora").grid(row=0, column=0, sticky="w")
-        ttk.Label(form_frame, text="Minuto").grid(row=0, column=1, sticky="w")
+        ttk.Label(
+            form_frame,
+            textvariable=self._alarm_form_help_var,
+            wraplength=self.CONTENT_WRAP_LENGTH,
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+
+        ttk.Label(form_frame, text="Hora").grid(row=1, column=0, sticky="w")
+        ttk.Label(form_frame, text="Minuto").grid(row=1, column=1, sticky="w")
 
         hour_spinbox = ttk.Spinbox(
             form_frame,
@@ -262,7 +273,7 @@ class ControlPanel(ttk.Frame):
             validate="key",
             validatecommand=(hour_validation, "%P"),
         )
-        hour_spinbox.grid(row=1, column=0, sticky="ew", padx=(0, 10), pady=(4, 10))
+        hour_spinbox.grid(row=2, column=0, sticky="ew", padx=(0, 10), pady=(4, 10))
 
         minute_spinbox = ttk.Spinbox(
             form_frame,
@@ -274,7 +285,7 @@ class ControlPanel(ttk.Frame):
             validate="key",
             validatecommand=(minute_validation, "%P"),
         )
-        minute_spinbox.grid(row=1, column=1, sticky="ew", pady=(4, 10))
+        minute_spinbox.grid(row=2, column=1, sticky="ew", pady=(4, 10))
         self._validator.attach_focus_normalizer(
             hour_spinbox,
             self._hour_var,
@@ -293,7 +304,7 @@ class ControlPanel(ttk.Frame):
         )
 
         ttk.Label(form_frame, text="Etiqueta").grid(
-            row=2,
+            row=3,
             column=0,
             columnspan=2,
             sticky="w",
@@ -308,15 +319,20 @@ class ControlPanel(ttk.Frame):
             invalidcommand=label_invalid_command,
         )
         label_entry.grid(
-            row=3,
+            row=4,
             column=0,
             columnspan=2,
             sticky="ew",
-            pady=(4, 10),
+            pady=(4, 4),
         )
+        ttk.Label(
+            form_frame,
+            text=f"Opcional, maximo {self.ALARM_LABEL_MAX_LENGTH} caracteres.",
+            font=("Segoe UI", 8),
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
         form_button_frame = ttk.Frame(form_frame)
-        form_button_frame.grid(row=4, column=0, columnspan=2, sticky="ew")
+        form_button_frame.grid(row=6, column=0, columnspan=2, sticky="ew")
         form_button_frame.columnconfigure((0, 1), weight=1)
 
         self._add_alarm_button = ttk.Button(
@@ -341,11 +357,12 @@ class ControlPanel(ttk.Frame):
         )
         list_frame.grid(row=row, column=0, sticky="nsew", pady=(0, self.SECTION_GAP))
         list_frame.columnconfigure(0, weight=1)
-        list_frame.rowconfigure(2, weight=1)
+        list_frame.rowconfigure(3, weight=1)
 
         ttk.Label(list_frame, textvariable=self._alarm_summary_var).grid(
             row=0,
             column=0,
+            columnspan=2,
             sticky="w",
             pady=(0, 7),
         )
@@ -353,7 +370,12 @@ class ControlPanel(ttk.Frame):
             list_frame,
             textvariable=self._next_alarm_var,
             font=("Segoe UI", 9, "bold"),
-        ).grid(row=1, column=0, sticky="w", pady=(0, 8))
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Label(
+            list_frame,
+            textvariable=self._selected_alarm_var,
+            wraplength=self.CONTENT_WRAP_LENGTH,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
         columns = ("time", "label", "status")
         self._alarm_tree = ttk.Treeview(
@@ -366,17 +388,24 @@ class ControlPanel(ttk.Frame):
         self._alarm_tree.heading("time", text="Hora")
         self._alarm_tree.heading("label", text="Etiqueta")
         self._alarm_tree.heading("status", text="Estado")
-        self._alarm_tree.column("time", width=64, anchor=tk.CENTER, stretch=False)
-        self._alarm_tree.column("label", width=140, anchor=tk.W)
-        self._alarm_tree.column("status", width=104, anchor=tk.W)
-        self._alarm_tree.grid(row=2, column=0, sticky="nsew")
+        self._alarm_tree.column("time", width=62, anchor=tk.CENTER, stretch=False)
+        self._alarm_tree.column("label", width=142, anchor=tk.W)
+        self._alarm_tree.column("status", width=96, anchor=tk.W, stretch=False)
+        self._alarm_tree.grid(row=3, column=0, sticky="nsew")
         self._alarm_tree.bind(
             "<<TreeviewSelect>>",
             self._handle_alarm_selection,
         )
+        tree_scrollbar = ttk.Scrollbar(
+            list_frame,
+            orient=tk.VERTICAL,
+            command=self._alarm_tree.yview,
+        )
+        tree_scrollbar.grid(row=3, column=1, sticky="ns")
+        self._alarm_tree.configure(yscrollcommand=tree_scrollbar.set)
 
         action_frame = ttk.Frame(list_frame)
-        action_frame.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        action_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         action_frame.columnconfigure((0, 1, 2), weight=1)
 
         self._enable_alarm_button = ttk.Button(
@@ -479,27 +508,28 @@ class ControlPanel(ttk.Frame):
     def _handle_enable_alarm(self) -> None:
         alarm_id = self.get_selected_alarm_id()
         if alarm_id is None:
-            self.set_message("Seleccione una alarma.")
+            self.set_message("Seleccione una alarma de la lista.")
             return
         self._on_enable_alarm(alarm_id)
 
     def _handle_disable_alarm(self) -> None:
         alarm_id = self.get_selected_alarm_id()
         if alarm_id is None:
-            self.set_message("Seleccione una alarma.")
+            self.set_message("Seleccione una alarma de la lista.")
             return
         self._on_disable_alarm(alarm_id)
 
     def _handle_delete_alarm(self) -> None:
         alarm_id = self.get_selected_alarm_id()
         if alarm_id is None:
-            self.set_message("Seleccione una alarma.")
+            self.set_message("Seleccione una alarma de la lista.")
             return
         self._on_delete_alarm(alarm_id)
 
     def _handle_alarm_selection(self, _event: tk.Event) -> None:
         alarm_id = self.get_selected_alarm_id()
         if alarm_id is None:
+            self._selected_alarm_var.set("Seleccione una alarma para editarla.")
             self._update_alarm_button_states()
             return
 
@@ -515,6 +545,9 @@ class ControlPanel(ttk.Frame):
         self._minute_var.set(f"{alarm.minute:02d}")
         self._label_var.set(alarm.label)
         self._set_alarm_form_mode(editing=True)
+        self._selected_alarm_var.set(
+            f"Seleccionada: {alarm.formatted_time()} - {alarm.display_label()}"
+        )
         self.set_message(f"Editando alarma: {alarm.formatted_time()} - {alarm.display_label()}")
 
     def _exit_alarm_edit_mode(self, clear_selection: bool) -> None:
@@ -523,6 +556,7 @@ class ControlPanel(ttk.Frame):
         self._minute_var.set("00")
         self._label_var.set("")
         self._set_alarm_form_mode(editing=False)
+        self._selected_alarm_var.set("Seleccione una alarma para editarla.")
 
         if clear_selection and self._alarm_tree is not None:
             selection = self._alarm_tree.selection()
@@ -542,10 +576,25 @@ class ControlPanel(ttk.Frame):
             self._alarm_form_frame.configure(
                 text="Editar alarma" if editing else "Agregar alarma"
             )
+        self._alarm_form_help_var.set(
+            "Modo edicion: ajuste los datos y guarde los cambios."
+            if editing
+            else "Complete la hora; la etiqueta es opcional."
+        )
         if self._add_alarm_button is not None:
             self._add_alarm_button.configure(
                 text="Guardar cambios" if editing else "Agregar alarma"
             )
+            self._add_alarm_button.grid_configure(
+                column=0,
+                columnspan=1 if editing else 2,
+                padx=(0, 8) if editing else (0, 0),
+            )
+        if self._cancel_edit_button is not None:
+            if editing:
+                self._cancel_edit_button.grid(row=0, column=1, sticky="ew")
+            else:
+                self._cancel_edit_button.grid_remove()
         self._set_button_state(self._cancel_edit_button, editing)
 
     def _handle_theme_change(self, _event: tk.Event) -> None:
