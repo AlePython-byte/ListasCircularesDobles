@@ -85,6 +85,10 @@ class ControlPanel(ttk.Frame):
             weekday: tk.BooleanVar(value=False)
             for weekday, _label in self.WEEKDAY_LABELS
         }
+        self._weekday_label_by_index = {
+            weekday: label
+            for weekday, label in self.WEEKDAY_LABELS
+        }
         today = date.today()
         self._date_day_var = tk.StringVar(value=f"{today.day:02d}")
         self._date_month_var = tk.StringVar(value=f"{today.month:02d}")
@@ -213,6 +217,8 @@ class ControlPanel(ttk.Frame):
                 values=(
                     alarm.formatted_time(),
                     alarm.display_label(),
+                    self._format_alarm_type(alarm),
+                    self._format_alarm_recurrence(alarm),
                     self._format_alarm_status(alarm, moment),
                 ),
             )
@@ -566,7 +572,7 @@ class ControlPanel(ttk.Frame):
             wraplength=self.CONTENT_WRAP_LENGTH,
         ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
-        columns = ("time", "label", "status")
+        columns = ("time", "label", "type", "recurrence", "status")
         self._alarm_tree = ttk.Treeview(
             list_frame,
             columns=columns,
@@ -576,10 +582,14 @@ class ControlPanel(ttk.Frame):
         )
         self._alarm_tree.heading("time", text="Hora")
         self._alarm_tree.heading("label", text="Etiqueta")
+        self._alarm_tree.heading("type", text="Tipo")
+        self._alarm_tree.heading("recurrence", text="Repeticion")
         self._alarm_tree.heading("status", text="Estado")
-        self._alarm_tree.column("time", width=62, anchor=tk.CENTER, stretch=False)
-        self._alarm_tree.column("label", width=142, anchor=tk.W)
-        self._alarm_tree.column("status", width=96, anchor=tk.W, stretch=False)
+        self._alarm_tree.column("time", width=54, anchor=tk.CENTER, stretch=False)
+        self._alarm_tree.column("label", width=92, anchor=tk.W, stretch=True)
+        self._alarm_tree.column("type", width=64, anchor=tk.CENTER, stretch=False)
+        self._alarm_tree.column("recurrence", width=92, anchor=tk.W, stretch=True)
+        self._alarm_tree.column("status", width=74, anchor=tk.CENTER, stretch=False)
         self._alarm_tree.grid(row=3, column=0, sticky="nsew")
         self._alarm_tree.bind(
             "<<TreeviewSelect>>",
@@ -892,7 +902,7 @@ class ControlPanel(ttk.Frame):
         if not alarm.enabled:
             return "Inactiva"
         if alarm.snooze_until is not None:
-            return f"Postergada {alarm.snooze_until.strftime('%H:%M')}"
+            return "Postergada"
         if (
             isinstance(moment, datetime)
             and alarm.schedule_type == AlarmScheduleType.SPECIFIC_DATE
@@ -902,6 +912,25 @@ class ControlPanel(ttk.Frame):
         ):
             return "Vencida"
         return "Activa"
+
+    def _format_alarm_type(self, alarm: Alarm) -> str:
+        if alarm.schedule_type == AlarmScheduleType.WEEKLY:
+            return "Semanal"
+        if alarm.schedule_type == AlarmScheduleType.SPECIFIC_DATE:
+            return "Fecha"
+        return "Diaria"
+
+    def _format_alarm_recurrence(self, alarm: Alarm) -> str:
+        if alarm.schedule_type == AlarmScheduleType.WEEKLY:
+            return ", ".join(
+                self._weekday_label_by_index.get(weekday, str(weekday))
+                for weekday in alarm.weekly_days
+            )
+        if alarm.schedule_type == AlarmScheduleType.SPECIFIC_DATE:
+            if alarm.target_date is None:
+                return "--/--/----"
+            return alarm.target_date.strftime("%d/%m/%Y")
+        return "Todos los dias"
 
     def _schedule_label_for_type(self, schedule_type: AlarmScheduleType) -> str:
         for current_type, label in self.SCHEDULE_TYPE_LABELS:
