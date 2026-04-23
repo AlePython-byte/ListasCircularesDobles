@@ -26,8 +26,8 @@ class ClockApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Reloj analogico con alarmas")
-        self.geometry("1120x720")
-        self.minsize(980, 660)
+        self.geometry("1180x740")
+        self.minsize(1040, 680)
 
         self._clock_engine = ClockEngine()
         self._alarm_manager = AlarmManager()
@@ -62,6 +62,8 @@ class ClockApp(tk.Tk):
         self._style.theme_use("clam")
         self._style.configure("TButton", padding=(10, 6))
         self._style.configure("TSpinbox", padding=4)
+        self._style.configure("TNotebook", padding=0)
+        self._style.configure("TNotebook.Tab", padding=(8, 7))
 
     def _load_persisted_state(self) -> None:
         state = self._persistence_service.load_state()
@@ -120,13 +122,13 @@ class ClockApp(tk.Tk):
         )
 
     def _build_layout(self) -> None:
-        self._container = ttk.Frame(self, padding=18)
+        self._container = ttk.Frame(self, padding=(22, 20))
         self._container.pack(fill=tk.BOTH, expand=True)
-        self._container.columnconfigure(0, weight=1)
-        self._container.columnconfigure(1, weight=0)
+        self._container.columnconfigure(0, weight=1, minsize=600)
+        self._container.columnconfigure(1, weight=0, minsize=370)
         self._container.rowconfigure(0, weight=1)
 
-        left_panel = ttk.Frame(self._container)
+        left_panel = ttk.Frame(self._container, padding=(4, 2, 0, 2))
         left_panel.grid(row=0, column=0, sticky="nsew")
         left_panel.columnconfigure(0, weight=1)
         left_panel.rowconfigure(2, weight=1)
@@ -137,7 +139,7 @@ class ClockApp(tk.Tk):
             font=("Segoe UI", 16, "bold"),
             anchor=tk.CENTER,
         )
-        selected_zone_label.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        selected_zone_label.grid(row=0, column=0, sticky="ew", pady=(2, 6))
 
         selected_time_label = ttk.Label(
             left_panel,
@@ -145,7 +147,7 @@ class ClockApp(tk.Tk):
             font=("Segoe UI", 11),
             anchor=tk.CENTER,
         )
-        selected_time_label.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        selected_time_label.grid(row=1, column=0, sticky="ew", pady=(0, 14))
 
         self._clock_canvas = AnalogClockCanvas(left_panel, theme=self._current_theme)
         self._clock_canvas.grid(row=2, column=0, sticky="nsew")
@@ -162,7 +164,7 @@ class ClockApp(tk.Tk):
             on_timezone_change=self._change_timezone,
             on_timer_finished=self._handle_timer_finished,
         )
-        self._control_panel.grid(row=0, column=1, sticky="ns", padx=(18, 0))
+        self._control_panel.grid(row=0, column=1, sticky="nsew", padx=(24, 0))
 
     def _update_clock(self) -> None:
         selected_moment = self._get_selected_moment()

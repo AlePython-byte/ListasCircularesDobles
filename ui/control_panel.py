@@ -15,6 +15,13 @@ from ui.stopwatch_panel import StopwatchPanel
 class ControlPanel(ttk.Frame):
     """Right-side notebook that organizes clock controls by feature."""
 
+    PANEL_WIDTH = 370
+    TAB_PADDING = (16, 16, 16, 14)
+    SECTION_PADDING = 12
+    SECTION_GAP = 12
+    CONTENT_WRAP_LENGTH = 305
+    ALARM_TABLE_HEIGHT = 6
+
     def __init__(
         self,
         master: tk.Misc,
@@ -28,7 +35,9 @@ class ControlPanel(ttk.Frame):
         on_timezone_change: Callable[[str], None],
         on_timer_finished: Callable[[], None],
     ) -> None:
-        super().__init__(master, padding=12)
+        super().__init__(master, padding=0)
+        self.configure(width=self.PANEL_WIDTH)
+        self.grid_propagate(False)
         self._themes = tuple(themes)
         self._timezone_entries = tuple(timezone_entries)
         self._on_add_alarm = on_add_alarm
@@ -160,12 +169,12 @@ class ControlPanel(ttk.Frame):
         self.rowconfigure(0, weight=1)
 
         notebook = ttk.Notebook(self)
-        notebook.grid(row=0, column=0, sticky="nsew")
+        notebook.grid(row=0, column=0, sticky="nsew", ipadx=2, ipady=2)
 
-        alarms_tab = ttk.Frame(notebook, padding=12)
+        alarms_tab = ttk.Frame(notebook, padding=self.TAB_PADDING)
         stopwatch_tab = StopwatchPanel(notebook)
         timer_tab = CountdownTimerPanel(notebook, on_finished=self._on_timer_finished)
-        world_tab = ttk.Frame(notebook, padding=12)
+        world_tab = ttk.Frame(notebook, padding=self.TAB_PADDING)
 
         notebook.add(alarms_tab, text="Alarmas")
         notebook.add(stopwatch_tab, text="Cron\u00f3metro")
@@ -186,8 +195,17 @@ class ControlPanel(ttk.Frame):
         self._build_status_frame(tab, row=3)
 
     def _build_timezone_frame(self, parent: ttk.Frame, row: int) -> None:
-        timezone_frame = ttk.LabelFrame(parent, text="Zona horaria del reloj", padding=10)
-        timezone_frame.grid(row=row, column=0, sticky="ew", pady=(0, 10))
+        timezone_frame = ttk.LabelFrame(
+            parent,
+            text="Zona horaria del reloj",
+            padding=self.SECTION_PADDING,
+        )
+        timezone_frame.grid(
+            row=row,
+            column=0,
+            sticky="ew",
+            pady=(0, self.SECTION_GAP),
+        )
         timezone_frame.columnconfigure(0, weight=1)
 
         timezone_combo = ttk.Combobox(
@@ -200,8 +218,12 @@ class ControlPanel(ttk.Frame):
         timezone_combo.bind("<<ComboboxSelected>>", self._handle_timezone_change)
 
     def _build_alarm_form_frame(self, parent: ttk.Frame, row: int) -> None:
-        form_frame = ttk.LabelFrame(parent, text="Agregar alarma", padding=10)
-        form_frame.grid(row=row, column=0, sticky="ew", pady=(0, 10))
+        form_frame = ttk.LabelFrame(
+            parent,
+            text="Agregar alarma",
+            padding=self.SECTION_PADDING,
+        )
+        form_frame.grid(row=row, column=0, sticky="ew", pady=(0, self.SECTION_GAP))
         form_frame.columnconfigure((0, 1), weight=1)
         hour_validation = self._validator.create_range_command(0, 23, 2)
         minute_validation = self._validator.create_range_command(0, 59, 2)
@@ -219,7 +241,7 @@ class ControlPanel(ttk.Frame):
             validate="key",
             validatecommand=(hour_validation, "%P"),
         )
-        hour_spinbox.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(3, 8))
+        hour_spinbox.grid(row=1, column=0, sticky="ew", padx=(0, 10), pady=(4, 10))
 
         minute_spinbox = ttk.Spinbox(
             form_frame,
@@ -231,7 +253,7 @@ class ControlPanel(ttk.Frame):
             validate="key",
             validatecommand=(minute_validation, "%P"),
         )
-        minute_spinbox.grid(row=1, column=1, sticky="ew", pady=(3, 8))
+        minute_spinbox.grid(row=1, column=1, sticky="ew", pady=(4, 10))
         self._validator.attach_focus_normalizer(
             hour_spinbox,
             self._hour_var,
@@ -260,7 +282,7 @@ class ControlPanel(ttk.Frame):
             column=0,
             columnspan=2,
             sticky="ew",
-            pady=(3, 8),
+            pady=(4, 10),
         )
 
         self._add_alarm_button = ttk.Button(
@@ -271,8 +293,12 @@ class ControlPanel(ttk.Frame):
         self._add_alarm_button.grid(row=4, column=0, columnspan=2, sticky="ew")
 
     def _build_alarm_list_frame(self, parent: ttk.Frame, row: int) -> None:
-        list_frame = ttk.LabelFrame(parent, text="Alarmas programadas", padding=10)
-        list_frame.grid(row=row, column=0, sticky="nsew", pady=(0, 10))
+        list_frame = ttk.LabelFrame(
+            parent,
+            text="Alarmas programadas",
+            padding=self.SECTION_PADDING,
+        )
+        list_frame.grid(row=row, column=0, sticky="nsew", pady=(0, self.SECTION_GAP))
         list_frame.columnconfigure(0, weight=1)
         list_frame.rowconfigure(2, weight=1)
 
@@ -280,28 +306,28 @@ class ControlPanel(ttk.Frame):
             row=0,
             column=0,
             sticky="w",
-            pady=(0, 6),
+            pady=(0, 7),
         )
         ttk.Label(
             list_frame,
             textvariable=self._next_alarm_var,
             font=("Segoe UI", 9, "bold"),
-        ).grid(row=1, column=0, sticky="w", pady=(0, 6))
+        ).grid(row=1, column=0, sticky="w", pady=(0, 8))
 
         columns = ("time", "label", "status")
         self._alarm_tree = ttk.Treeview(
             list_frame,
             columns=columns,
             show="headings",
-            height=6,
+            height=self.ALARM_TABLE_HEIGHT,
             selectmode="browse",
         )
         self._alarm_tree.heading("time", text="Hora")
         self._alarm_tree.heading("label", text="Etiqueta")
         self._alarm_tree.heading("status", text="Estado")
-        self._alarm_tree.column("time", width=58, anchor=tk.CENTER, stretch=False)
-        self._alarm_tree.column("label", width=112, anchor=tk.W)
-        self._alarm_tree.column("status", width=92, anchor=tk.W)
+        self._alarm_tree.column("time", width=64, anchor=tk.CENTER, stretch=False)
+        self._alarm_tree.column("label", width=140, anchor=tk.W)
+        self._alarm_tree.column("status", width=104, anchor=tk.W)
         self._alarm_tree.grid(row=2, column=0, sticky="nsew")
         self._alarm_tree.bind(
             "<<TreeviewSelect>>",
@@ -309,7 +335,7 @@ class ControlPanel(ttk.Frame):
         )
 
         action_frame = ttk.Frame(list_frame)
-        action_frame.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        action_frame.grid(row=3, column=0, sticky="ew", pady=(10, 0))
         action_frame.columnconfigure((0, 1, 2), weight=1)
 
         self._enable_alarm_button = ttk.Button(
@@ -321,7 +347,7 @@ class ControlPanel(ttk.Frame):
             row=0,
             column=0,
             sticky="ew",
-            padx=(0, 6),
+            padx=(0, 8),
         )
         self._disable_alarm_button = ttk.Button(
             action_frame,
@@ -332,7 +358,7 @@ class ControlPanel(ttk.Frame):
             row=0,
             column=1,
             sticky="ew",
-            padx=(0, 6),
+            padx=(0, 8),
         )
         self._delete_alarm_button = ttk.Button(
             action_frame,
@@ -348,8 +374,12 @@ class ControlPanel(ttk.Frame):
     def _build_world_tab(self, tab: ttk.Frame) -> None:
         tab.columnconfigure(0, weight=1)
 
-        world_frame = ttk.LabelFrame(tab, text="Horas mundiales", padding=10)
-        world_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        world_frame = ttk.LabelFrame(
+            tab,
+            text="Horas mundiales",
+            padding=self.SECTION_PADDING,
+        )
+        world_frame.grid(row=0, column=0, sticky="ew", pady=(0, self.SECTION_GAP))
         world_frame.columnconfigure(0, weight=1)
 
         for index, entry in enumerate(self._timezone_entries):
@@ -359,10 +389,14 @@ class ControlPanel(ttk.Frame):
                 world_frame,
                 textvariable=value,
                 font=("Segoe UI", 10),
-                wraplength=285,
-            ).grid(row=index, column=0, sticky="w", pady=(0, 7))
+                wraplength=self.CONTENT_WRAP_LENGTH,
+            ).grid(row=index, column=0, sticky="w", pady=(0, 9))
 
-        theme_frame = ttk.LabelFrame(tab, text="Apariencia del reloj", padding=10)
+        theme_frame = ttk.LabelFrame(
+            tab,
+            text="Apariencia del reloj",
+            padding=self.SECTION_PADDING,
+        )
         theme_frame.grid(row=1, column=0, sticky="ew")
         theme_frame.columnconfigure(0, weight=1)
 
@@ -376,14 +410,14 @@ class ControlPanel(ttk.Frame):
         theme_combo.bind("<<ComboboxSelected>>", self._handle_theme_change)
 
     def _build_status_frame(self, parent: ttk.Frame, row: int) -> None:
-        status_frame = ttk.LabelFrame(parent, text="Estado", padding=10)
+        status_frame = ttk.LabelFrame(parent, text="Estado", padding=self.SECTION_PADDING)
         status_frame.grid(row=row, column=0, sticky="ew")
         status_frame.columnconfigure(0, weight=1)
 
         ttk.Label(
             status_frame,
             textvariable=self._message_var,
-            wraplength=285,
+            wraplength=self.CONTENT_WRAP_LENGTH,
         ).grid(row=0, column=0, sticky="w")
 
     def _handle_add_alarm(self) -> None:
