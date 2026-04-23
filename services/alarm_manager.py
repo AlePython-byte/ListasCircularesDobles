@@ -1,10 +1,23 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, Iterable, Optional, Tuple
 
 from models.alarm import Alarm
 from services.sound_service import SoundService
+
+
+@dataclass(frozen=True)
+class AlarmSchedule:
+    """Effective next trigger information for one active alarm."""
+
+    alarm: Alarm
+    trigger_datetime: datetime
+    is_snoozed: bool
+
+    def seconds_until(self, moment: datetime) -> float:
+        return max(0.0, (self.trigger_datetime - moment).total_seconds())
 
 
 class AlarmManager:
@@ -84,20 +97,46 @@ class AlarmManager:
         return f"{count} alarmas programadas."
 
     def next_active_alarm(self, moment: Optional[datetime] = None) -> Optional[Alarm]:
-        active_alarms = [alarm for alarm in self._alarms.values() if alarm.enabled]
-        if not active_alarms:
-            return None
         if moment is None:
+            active_alarms = [alarm for alarm in self._alarms.values() if alarm.enabled]
+            if not active_alarms:
+                return None
             return min(active_alarms, key=lambda alarm: (alarm.hour, alarm.minute, alarm.alarm_id))
 
-        def seconds_until_alarm(alarm: Alarm) -> tuple[float, int]:
-            next_trigger = alarm.next_trigger_datetime(moment)
-            if next_trigger is None:
-                return float("inf"), alarm.alarm_id
-            seconds_until = max(0.0, (next_trigger - moment).total_seconds())
-            return seconds_until, alarm.alarm_id
+        next_schedule = self.next_alarm_schedule(moment)
+        if next_schedule is None:
+            return None
+        return next_schedule.alarm
 
-        return min(active_alarms, key=seconds_until_alarm)
+    def next_alarm_schedule(self, moment: datetime) -> Optional[AlarmSchedule]:
+        schedules = self.get_effective_schedules(moment)
+        if not schedules:
+            return None
+        return min(
+            schedules,
+            key=lambda schedule: (
+                schedule.seconds_until(moment),
+                schedule.trigger_datetime,
+                schedule.alarm.alarm_id,
+            ),
+        )
+
+    def get_effective_schedules(self, moment: datetime) -> Tuple[AlarmSchedule, ...]:
+        schedules = []
+
+        for alarm in self._alarms.values():
+            trigger_datetime = alarm.effective_trigger_datetime(moment)
+            if trigger_datetime is None:
+                continue
+            schedules.append(
+                AlarmSchedule(
+                    alarm=alarm,
+                    trigger_datetime=trigger_datetime,
+                    is_snoozed=alarm.is_snoozed(),
+                )
+            )
+
+        return tuple(schedules)
 
     def play_notification_sound(self) -> None:
         SoundService().play_notification_sound()

@@ -93,7 +93,8 @@ class Alarm:
     def is_scheduled_for(self, moment: datetime) -> bool:
         return self.hour == moment.hour and self.minute == moment.minute
 
-    def next_trigger_datetime(self, moment: datetime) -> Optional[datetime]:
+    def effective_trigger_datetime(self, moment: datetime) -> Optional[datetime]:
+        """Return the next datetime this alarm can trigger from the given moment."""
         if not self.enabled:
             return None
 
@@ -111,6 +112,9 @@ class Alarm:
         if scheduled_time <= moment:
             scheduled_time += timedelta(days=1)
         return scheduled_time
+
+    def next_trigger_datetime(self, moment: datetime) -> Optional[datetime]:
+        return self.effective_trigger_datetime(moment)
 
     def status_detail(self) -> str:
         if self.snooze_until is not None:

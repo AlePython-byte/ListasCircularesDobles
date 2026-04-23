@@ -405,12 +405,19 @@ class ClockApp(tk.Tk):
         self._control_panel.set_next_alarm_text(self._next_alarm_text())
 
     def _next_alarm_text(self) -> str:
-        next_alarm = self._alarm_manager.next_active_alarm(self._get_selected_moment())
-        if next_alarm is None:
+        moment = self._get_selected_moment()
+        next_schedule = self._alarm_manager.next_alarm_schedule(moment)
+        if next_schedule is None:
             return "Proxima alarma: ninguna"
+
+        day_text = "hoy"
+        if next_schedule.trigger_datetime.date() > moment.date():
+            day_text = "manana"
+
+        snooze_text = " (postergada)" if next_schedule.is_snoozed else ""
         return (
-            f"Proxima alarma: {next_alarm.formatted_time()} - "
-            f"{next_alarm.display_label()}"
+            f"Proxima alarma: {next_schedule.trigger_datetime.strftime('%H:%M')} "
+            f"{day_text} - {next_schedule.alarm.display_label()}{snooze_text}"
         )
 
     def _get_selected_moment(self) -> datetime:
