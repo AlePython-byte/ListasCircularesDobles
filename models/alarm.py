@@ -18,33 +18,44 @@ class Alarm:
     snooze_until: Optional[datetime] = None
 
     def __post_init__(self) -> None:
+        if self.alarm_id <= 0:
+            raise ValueError("Alarm id must be greater than zero.")
         if not 0 <= self.hour <= 23:
             raise ValueError("Hour must be between 0 and 23.")
         if not 0 <= self.minute <= 59:
             raise ValueError("Minute must be between 0 and 59.")
+        self.label = self.label.strip()
+        self.last_trigger_key = self._normalize_trigger_key(self.last_trigger_key)
+        if self.snooze_until is not None and self.snooze_until.tzinfo is None:
+            self.snooze_until = None
 
     def formatted_time(self) -> str:
         return f"{self.hour:02d}:{self.minute:02d}"
 
     def display_label(self) -> str:
-        return self.label.strip() or "Sin etiqueta"
+        return self.label or "Sin etiqueta"
+
+    def is_snoozed(self) -> bool:
+        return self.enabled and self.snooze_until is not None
+
+    def is_waiting_for_base_time(self) -> bool:
+        return self.enabled and self.snooze_until is None
 
     def should_trigger(self, moment: datetime) -> bool:
         if not self.enabled:
             return False
 
-        trigger_key = self._trigger_key(moment)
-        if self.last_trigger_key == trigger_key:
+        if self.was_triggered_during(moment):
             return False
 
-        if self.snooze_until is not None:
-            return moment >= self.snooze_until
+        if self.is_snoozed():
+            return self.is_snooze_due(moment)
 
-        return self.hour == moment.hour and self.minute == moment.minute
+        return self.is_scheduled_for(moment)
 
     def mark_triggered(self, moment: datetime) -> None:
         self.last_trigger_key = self._trigger_key(moment)
-        self.snooze_until = None
+        self.clear_snooze()
 
     def snooze(self, moment: datetime, minutes: int) -> None:
         if minutes <= 0:
@@ -55,7 +66,38 @@ class Alarm:
     def set_enabled(self, enabled: bool) -> None:
         self.enabled = enabled
         if not enabled:
-            self.snooze_until = None
+            self.clear_snooze()
+
+    def clear_snooze(self) -> None:
+        self.snooze_until = None
+
+    def was_triggered_during(self, moment: datetime) -> bool:
+        return self.last_trigger_key == self._trigger_key(moment)
+
+    def is_snooze_due(self, moment: datetime) -> bool:
+        return self.snooze_until is not None and moment >= self.snooze_until
+
+    def is_scheduled_for(self, moment: datetime) -> bool:
+        return self.hour == moment.hour and self.minute == moment.minute
+
+    def next_trigger_datetime(self, moment: datetime) -> Optional[datetime]:
+        if not self.enabled:
+            return None
+
+        if self.is_snoozed():
+            if self.snooze_until is not None and self.snooze_until > moment:
+                return self.snooze_until
+            return moment
+
+        scheduled_time = moment.replace(
+            hour=self.hour,
+            minute=self.minute,
+            second=0,
+            microsecond=0,
+        )
+        if scheduled_time <= moment:
+            scheduled_time += timedelta(days=1)
+        return scheduled_time
 
     def status_detail(self) -> str:
         if self.snooze_until is not None:
@@ -75,25 +117,61 @@ class Alarm:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Alarm":
-        snooze_until = data.get("snooze_until")
-        parsed_snooze = None
-        if isinstance(snooze_until, str) and snooze_until:
-            try:
-                parsed_snooze = datetime.fromisoformat(snooze_until)
-            except ValueError:
-                parsed_snooze = None
-            if parsed_snooze is not None and parsed_snooze.tzinfo is None:
-                parsed_snooze = None
-
         return cls(
             alarm_id=int(data["alarm_id"]),
             hour=int(data["hour"]),
             minute=int(data["minute"]),
-            label=str(data.get("label", "")),
-            enabled=bool(data.get("enabled", True)),
-            last_trigger_key=data.get("last_trigger_key"),
-            snooze_until=parsed_snooze,
+            label=cls._parse_label(data.get("label", "")),
+            enabled=cls._parse_enabled(data.get("enabled", True)),
+            last_trigger_key=cls._normalize_trigger_key(data.get("last_trigger_key")),
+            snooze_until=cls._parse_snooze_until(data.get("snooze_until")),
         )
 
     def _trigger_key(self, moment: datetime) -> str:
         return moment.strftime("%Y-%m-%d %H:%M")
+
+    @staticmethod
+    def _parse_label(value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    @staticmethod
+    def _parse_enabled(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "off"}:
+                return False
+        if isinstance(value, int) and value in (0, 1):
+            return bool(value)
+        raise ValueError("Enabled state must be a boolean value.")
+
+    @staticmethod
+    def _parse_snooze_until(value: Any) -> Optional[datetime]:
+        if not isinstance(value, str) or not value:
+            return None
+
+        try:
+            parsed_value = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
+        if parsed_value.tzinfo is None:
+            return None
+        return parsed_value
+
+    @staticmethod
+    def _normalize_trigger_key(value: Any) -> Optional[str]:
+        if not isinstance(value, str) or not value.strip():
+            return None
+
+        normalized = value.strip()
+        try:
+            datetime.strptime(normalized, "%Y-%m-%d %H:%M")
+        except ValueError:
+            return None
+        return normalized

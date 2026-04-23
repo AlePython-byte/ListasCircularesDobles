@@ -81,13 +81,11 @@ class AlarmManager:
         if moment is None:
             return min(active_alarms, key=lambda alarm: (alarm.hour, alarm.minute, alarm.alarm_id))
 
-        current_seconds = moment.hour * 3600 + moment.minute * 60 + moment.second
-
-        def seconds_until_alarm(alarm: Alarm) -> tuple[int, int]:
-            alarm_seconds = alarm.hour * 3600 + alarm.minute * 60
-            seconds_until = alarm_seconds - current_seconds
-            if seconds_until <= 0:
-                seconds_until += 24 * 3600
+        def seconds_until_alarm(alarm: Alarm) -> tuple[float, int]:
+            next_trigger = alarm.next_trigger_datetime(moment)
+            if next_trigger is None:
+                return float("inf"), alarm.alarm_id
+            seconds_until = max(0.0, (next_trigger - moment).total_seconds())
             return seconds_until, alarm.alarm_id
 
         return min(active_alarms, key=seconds_until_alarm)
