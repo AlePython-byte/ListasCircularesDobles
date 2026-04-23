@@ -20,14 +20,25 @@ class Alarm:
     def __post_init__(self) -> None:
         if self.alarm_id <= 0:
             raise ValueError("Alarm id must be greater than zero.")
-        if not 0 <= self.hour <= 23:
-            raise ValueError("Hour must be between 0 and 23.")
-        if not 0 <= self.minute <= 59:
-            raise ValueError("Minute must be between 0 and 59.")
+        self._validate_time(self.hour, self.minute)
         self.label = self.label.strip()
         self.last_trigger_key = self._normalize_trigger_key(self.last_trigger_key)
         if self.snooze_until is not None and self.snooze_until.tzinfo is None:
             self.snooze_until = None
+
+    def update_schedule(self, hour: int, minute: int, label: str) -> None:
+        self._validate_time(hour, minute)
+        self.hour = hour
+        self.minute = minute
+        self.label = label.strip()
+        self.last_trigger_key = None
+        self.clear_snooze()
+
+    def _validate_time(self, hour: int, minute: int) -> None:
+        if not 0 <= hour <= 23:
+            raise ValueError("Hour must be between 0 and 23.")
+        if not 0 <= minute <= 59:
+            raise ValueError("Minute must be between 0 and 59.")
 
     def formatted_time(self) -> str:
         return f"{self.hour:02d}:{self.minute:02d}"

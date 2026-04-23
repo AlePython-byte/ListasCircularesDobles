@@ -28,6 +28,7 @@ class ControlPanel(ttk.Frame):
         themes: Iterable[ClockTheme],
         timezone_entries: Iterable[WorldClockEntry],
         on_add_alarm: Callable[[int, int, str], None],
+        on_update_alarm: Callable[[int, int, int, str], bool],
         on_enable_alarm: Callable[[int], None],
         on_disable_alarm: Callable[[int], None],
         on_delete_alarm: Callable[[int], None],
@@ -41,6 +42,7 @@ class ControlPanel(ttk.Frame):
         self._themes = tuple(themes)
         self._timezone_entries = tuple(timezone_entries)
         self._on_add_alarm = on_add_alarm
+        self._on_update_alarm = on_update_alarm
         self._on_enable_alarm = on_enable_alarm
         self._on_disable_alarm = on_disable_alarm
         self._on_delete_alarm = on_delete_alarm
@@ -58,9 +60,13 @@ class ControlPanel(ttk.Frame):
         self._theme_var = tk.StringVar(value=self._themes[0].display_name)
         self._timezone_var = tk.StringVar(value=self._timezone_entries[0].city)
         self._world_time_vars: Dict[str, tk.StringVar] = {}
+        self._alarm_by_id: Dict[int, Alarm] = {}
         self._alarm_enabled_by_id: Dict[int, bool] = {}
+        self._editing_alarm_id: Optional[int] = None
         self._alarm_tree: Optional[ttk.Treeview] = None
+        self._alarm_form_frame: ttk.LabelFrame | None = None
         self._add_alarm_button: ttk.Button | None = None
+        self._cancel_edit_button: ttk.Button | None = None
         self._enable_alarm_button: ttk.Button | None = None
         self._disable_alarm_button: ttk.Button | None = None
         self._delete_alarm_button: ttk.Button | None = None
@@ -117,13 +123,16 @@ class ControlPanel(ttk.Frame):
         if self._alarm_tree is None:
             return
 
-        selected_id = self.get_selected_alarm_id()
+        selected_id = self.get_selected_alarm_id() or self._editing_alarm_id
+        alarm_items = tuple(alarms)
+        self._alarm_by_id = {}
         self._alarm_enabled_by_id = {}
         for item_id in self._alarm_tree.get_children():
             self._alarm_tree.delete(item_id)
 
-        for alarm in alarms:
+        for alarm in alarm_items:
             item_id = str(alarm.alarm_id)
+            self._alarm_by_id[alarm.alarm_id] = alarm
             self._alarm_enabled_by_id[alarm.alarm_id] = alarm.enabled
             self._alarm_tree.insert(
                 "",
@@ -139,6 +148,8 @@ class ControlPanel(ttk.Frame):
         if selected_id is not None and self._alarm_tree.exists(str(selected_id)):
             self._alarm_tree.selection_set(str(selected_id))
         else:
+            if self._editing_alarm_id is not None:
+                self._exit_alarm_edit_mode(clear_selection=False)
             current_selection = self._alarm_tree.selection()
             if current_selection:
                 self._alarm_tree.selection_remove(current_selection)
@@ -223,6 +234,7 @@ class ControlPanel(ttk.Frame):
             text="Agregar alarma",
             padding=self.SECTION_PADDING,
         )
+        self._alarm_form_frame = form_frame
         form_frame.grid(row=row, column=0, sticky="ew", pady=(0, self.SECTION_GAP))
         form_frame.columnconfigure((0, 1), weight=1)
         hour_validation = self._validator.create_range_command(0, 23, 2)
@@ -285,12 +297,23 @@ class ControlPanel(ttk.Frame):
             pady=(4, 10),
         )
 
+        form_button_frame = ttk.Frame(form_frame)
+        form_button_frame.grid(row=4, column=0, columnspan=2, sticky="ew")
+        form_button_frame.columnconfigure((0, 1), weight=1)
+
         self._add_alarm_button = ttk.Button(
-            form_frame,
+            form_button_frame,
             text="Agregar alarma",
-            command=self._handle_add_alarm,
+            command=self._handle_alarm_form_submit,
         )
-        self._add_alarm_button.grid(row=4, column=0, columnspan=2, sticky="ew")
+        self._add_alarm_button.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        self._cancel_edit_button = ttk.Button(
+            form_button_frame,
+            text="Cancelar",
+            command=self._cancel_alarm_edit,
+        )
+        self._cancel_edit_button.grid(row=0, column=1, sticky="ew")
 
     def _build_alarm_list_frame(self, parent: ttk.Frame, row: int) -> None:
         list_frame = ttk.LabelFrame(
@@ -331,7 +354,7 @@ class ControlPanel(ttk.Frame):
         self._alarm_tree.grid(row=2, column=0, sticky="nsew")
         self._alarm_tree.bind(
             "<<TreeviewSelect>>",
-            lambda _event: self._update_alarm_button_states(),
+            self._handle_alarm_selection,
         )
 
         action_frame = ttk.Frame(list_frame)
@@ -420,14 +443,20 @@ class ControlPanel(ttk.Frame):
             wraplength=self.CONTENT_WRAP_LENGTH,
         ).grid(row=0, column=0, sticky="w")
 
-    def _handle_add_alarm(self) -> None:
+    def _handle_alarm_form_submit(self) -> None:
         try:
             hour, minute, label = self.get_alarm_values()
         except ValueError as error:
             self.set_message(str(error))
             return
 
-        self._on_add_alarm(hour, minute, label)
+        if self._editing_alarm_id is None:
+            self._on_add_alarm(hour, minute, label)
+            return
+
+        updated = self._on_update_alarm(self._editing_alarm_id, hour, minute, label)
+        if updated:
+            self._exit_alarm_edit_mode(clear_selection=True)
 
     def _handle_enable_alarm(self) -> None:
         alarm_id = self.get_selected_alarm_id()
@@ -450,6 +479,57 @@ class ControlPanel(ttk.Frame):
             return
         self._on_delete_alarm(alarm_id)
 
+    def _handle_alarm_selection(self, _event: tk.Event) -> None:
+        alarm_id = self.get_selected_alarm_id()
+        if alarm_id is None:
+            self._update_alarm_button_states()
+            return
+
+        alarm = self._alarm_by_id.get(alarm_id)
+        if alarm is not None:
+            self._enter_alarm_edit_mode(alarm)
+
+        self._update_alarm_button_states()
+
+    def _enter_alarm_edit_mode(self, alarm: Alarm) -> None:
+        self._editing_alarm_id = alarm.alarm_id
+        self._hour_var.set(f"{alarm.hour:02d}")
+        self._minute_var.set(f"{alarm.minute:02d}")
+        self._label_var.set(alarm.label)
+        self._set_alarm_form_mode(editing=True)
+        self.set_message(f"Editando alarma: {alarm.formatted_time()} - {alarm.display_label()}")
+
+    def _exit_alarm_edit_mode(self, clear_selection: bool) -> None:
+        self._editing_alarm_id = None
+        self._hour_var.set("07")
+        self._minute_var.set("00")
+        self._label_var.set("")
+        self._set_alarm_form_mode(editing=False)
+
+        if clear_selection and self._alarm_tree is not None:
+            selection = self._alarm_tree.selection()
+            if selection:
+                self._alarm_tree.selection_remove(selection)
+
+        self._update_alarm_button_states()
+
+    def _cancel_alarm_edit(self) -> None:
+        if self._editing_alarm_id is None:
+            return
+        self._exit_alarm_edit_mode(clear_selection=True)
+        self.set_message("Edicion cancelada.")
+
+    def _set_alarm_form_mode(self, editing: bool) -> None:
+        if self._alarm_form_frame is not None:
+            self._alarm_form_frame.configure(
+                text="Editar alarma" if editing else "Agregar alarma"
+            )
+        if self._add_alarm_button is not None:
+            self._add_alarm_button.configure(
+                text="Guardar cambios" if editing else "Agregar alarma"
+            )
+        self._set_button_state(self._cancel_edit_button, editing)
+
     def _handle_theme_change(self, _event: tk.Event) -> None:
         self._on_theme_change(self._theme_var.get())
 
@@ -462,6 +542,7 @@ class ControlPanel(ttk.Frame):
 
     def _update_alarm_button_states(self) -> None:
         self._set_button_state(self._add_alarm_button, self._is_alarm_input_valid())
+        self._set_button_state(self._cancel_edit_button, self._editing_alarm_id is not None)
         selected_id = self.get_selected_alarm_id()
         has_selection = selected_id is not None
         selected_enabled = self._alarm_enabled_by_id.get(selected_id, False)

@@ -26,6 +26,11 @@ class AlarmManager:
         self._next_id += 1
         return alarm
 
+    def update_alarm(self, alarm_id: int, hour: int, minute: int, label: str = "") -> Alarm:
+        alarm = self._require_alarm(alarm_id)
+        alarm.update_schedule(hour, minute, label)
+        return alarm
+
     def load_alarms(self, alarms: Iterable[Alarm]) -> None:
         self._alarms = {}
         max_id = 0

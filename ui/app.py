@@ -157,6 +157,7 @@ class ClockApp(tk.Tk):
             themes=self._theme_manager.get_themes(),
             timezone_entries=self._world_time_service.get_entries(),
             on_add_alarm=self._add_alarm,
+            on_update_alarm=self._update_alarm,
             on_enable_alarm=self._enable_alarm,
             on_disable_alarm=self._disable_alarm,
             on_delete_alarm=self._delete_alarm,
@@ -205,6 +206,20 @@ class ClockApp(tk.Tk):
             f"Alarma agregada: {alarm.formatted_time()} - {alarm.display_label()}"
         )
         self._save_persisted_state()
+
+    def _update_alarm(self, alarm_id: int, hour: int, minute: int, label: str) -> bool:
+        try:
+            alarm = self._alarm_manager.update_alarm(alarm_id, hour, minute, label)
+        except ValueError:
+            self._control_panel.set_message("La alarma no es valida.")
+            return False
+
+        self._refresh_alarm_panel()
+        self._control_panel.set_message(
+            f"Alarma actualizada: {alarm.formatted_time()} - {alarm.display_label()}"
+        )
+        self._save_persisted_state()
+        return True
 
     def _enable_alarm(self, alarm_id: int) -> None:
         try:
