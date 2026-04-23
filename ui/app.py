@@ -211,6 +211,7 @@ class ClockApp(tk.Tk):
                 schedule_type=schedule_type,
                 weekly_days=weekly_days,
                 target_date=target_date,
+                reference_moment=self._get_selected_moment(),
             )
         except ValueError as error:
             self._control_panel.set_message(str(error) or "La alarma no es valida.")
@@ -241,6 +242,7 @@ class ClockApp(tk.Tk):
                 schedule_type=schedule_type,
                 weekly_days=weekly_days,
                 target_date=target_date,
+                reference_moment=self._get_selected_moment(),
             )
         except ValueError as error:
             self._control_panel.set_message(str(error) or "La alarma no es valida.")
@@ -434,7 +436,9 @@ class ClockApp(tk.Tk):
         self._control_panel.hide_alarm_notice()
 
     def _refresh_alarm_panel(self, moment: datetime | None = None) -> None:
-        self._control_panel.update_alarms(self._alarm_manager.get_alarms())
+        if moment is None:
+            moment = self._get_selected_moment()
+        self._control_panel.update_alarms(self._alarm_manager.get_alarms(), moment)
         self._control_panel.set_alarm_summary(self._alarm_manager.summary_text())
         self._control_panel.set_next_alarm_text(self._next_alarm_text(moment))
 

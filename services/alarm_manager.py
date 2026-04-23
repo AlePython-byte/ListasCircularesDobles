@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time as datetime_time
 from typing import Dict, Iterable, Optional, Tuple
 
 from models.alarm import Alarm, AlarmScheduleType
@@ -35,6 +35,7 @@ class AlarmManager:
         schedule_type: AlarmScheduleType | str = AlarmScheduleType.DAILY,
         weekly_days: Iterable[int] = (),
         target_date: date | str | None = None,
+        reference_moment: datetime | None = None,
     ) -> Alarm:
         normalized_label = self._validate_alarm_data(hour, minute, label)
         alarm = Alarm(
@@ -47,6 +48,7 @@ class AlarmManager:
             weekly_days=weekly_days,
             target_date=target_date,
         )
+        self._validate_schedule_data(alarm, reference_moment)
         self._ensure_unique_alarm(alarm)
         self._alarms[alarm.alarm_id] = alarm
         self._next_id += 1
@@ -61,6 +63,7 @@ class AlarmManager:
         schedule_type: AlarmScheduleType | str | None = None,
         weekly_days: Iterable[int] = (),
         target_date: date | str | None = None,
+        reference_moment: datetime | None = None,
     ) -> Alarm:
         alarm = self._require_alarm(alarm_id)
         normalized_label = self._validate_alarm_data(hour, minute, label)
@@ -79,6 +82,7 @@ class AlarmManager:
             weekly_days=next_weekly_days,
             target_date=next_target_date,
         )
+        self._validate_schedule_data(candidate, reference_moment)
         self._ensure_unique_alarm(candidate, excluded_alarm_id=alarm_id)
         alarm.update_schedule(hour, minute, normalized_label)
         if schedule_type is not None:
@@ -213,3 +217,31 @@ class AlarmManager:
                 continue
             if alarm.has_same_definition(candidate):
                 raise ValueError("Ya existe una alarma con la misma hora y etiqueta.")
+
+    def _validate_schedule_data(
+        self,
+        alarm: Alarm,
+        reference_moment: datetime | None,
+    ) -> None:
+        if alarm.schedule_type == AlarmScheduleType.WEEKLY and not alarm.weekly_days:
+            raise ValueError("Seleccione al menos un dia de la semana.")
+
+        if alarm.schedule_type != AlarmScheduleType.SPECIFIC_DATE:
+            return
+
+        if alarm.target_date is None:
+            raise ValueError("Seleccione una fecha especifica valida.")
+
+        if reference_moment is None:
+            return
+
+        current_minute = reference_moment.replace(second=0, microsecond=0)
+        scheduled_datetime = datetime.combine(
+            alarm.target_date,
+            datetime_time(hour=alarm.hour, minute=alarm.minute),
+            tzinfo=reference_moment.tzinfo,
+        )
+        if scheduled_datetime < current_minute:
+            raise ValueError(
+                "La fecha y hora especificas ya pasaron en la zona seleccionada."
+            )

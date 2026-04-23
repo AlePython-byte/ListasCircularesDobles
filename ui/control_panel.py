@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Dict, Iterable, Optional, Tuple
@@ -187,7 +187,11 @@ class ControlPanel(ttk.Frame):
     def hide_alarm_notice(self) -> None:
         self._message_var.set("Listo")
 
-    def update_alarms(self, alarms: Iterable[Alarm]) -> None:
+    def update_alarms(
+        self,
+        alarms: Iterable[Alarm],
+        moment: datetime | None = None,
+    ) -> None:
         if self._alarm_tree is None:
             return
 
@@ -209,7 +213,7 @@ class ControlPanel(ttk.Frame):
                 values=(
                     alarm.formatted_time(),
                     alarm.display_label(),
-                    self._format_alarm_status(alarm),
+                    self._format_alarm_status(alarm, moment),
                 ),
             )
 
@@ -884,11 +888,19 @@ class ControlPanel(ttk.Frame):
         if button is not None:
             button.configure(state=tk.NORMAL if enabled else tk.DISABLED)
 
-    def _format_alarm_status(self, alarm: Alarm) -> str:
+    def _format_alarm_status(self, alarm: Alarm, moment: datetime | None = None) -> str:
         if not alarm.enabled:
             return "Inactiva"
         if alarm.snooze_until is not None:
             return f"Postergada {alarm.snooze_until.strftime('%H:%M')}"
+        if (
+            isinstance(moment, datetime)
+            and alarm.schedule_type == AlarmScheduleType.SPECIFIC_DATE
+            and alarm.target_date is not None
+            and alarm.effective_trigger_datetime(moment) is None
+            and not alarm.should_trigger(moment)
+        ):
+            return "Vencida"
         return "Activa"
 
     def _schedule_label_for_type(self, schedule_type: AlarmScheduleType) -> str:
