@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from datetime import date, datetime, time as datetime_time, timedelta
+from enum import Enum
+from typing import Any, Dict, Iterable, Optional, Tuple
+
+
+class AlarmScheduleType(str, Enum):
+    """Supported recurrence rules for alarms."""
+
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    SPECIFIC_DATE = "specific_date"
 
 
 @dataclass
@@ -18,6 +27,9 @@ class Alarm:
     enabled: bool = True
     last_trigger_key: Optional[str] = None
     snooze_until: Optional[datetime] = None
+    schedule_type: AlarmScheduleType = AlarmScheduleType.DAILY
+    weekly_days: Tuple[int, ...] = ()
+    target_date: Optional[date] = None
 
     def __post_init__(self) -> None:
         if self.alarm_id <= 0:
@@ -27,12 +39,27 @@ class Alarm:
         self.last_trigger_key = self._normalize_trigger_key(self.last_trigger_key)
         if self.snooze_until is not None and self.snooze_until.tzinfo is None:
             self.snooze_until = None
+        self._normalize_schedule_fields()
 
     def update_schedule(self, hour: int, minute: int, label: str) -> None:
         self._validate_time(hour, minute)
         self.hour = hour
         self.minute = minute
         self.label = self.normalize_label(label)
+        self.last_trigger_key = None
+        self.clear_snooze()
+
+    def set_schedule_rule(
+        self,
+        schedule_type: AlarmScheduleType | str,
+        weekly_days: Iterable[int] = (),
+        target_date: date | str | None = None,
+    ) -> None:
+        """Update the recurrence rule while preserving the base time."""
+        self.schedule_type = self._parse_schedule_type(schedule_type)
+        self.weekly_days = self._parse_weekly_days(weekly_days)
+        self.target_date = self._parse_target_date(target_date)
+        self._normalize_schedule_fields()
         self.last_trigger_key = None
         self.clear_snooze()
 
@@ -91,7 +118,16 @@ class Alarm:
         return self.snooze_until is not None and moment >= self.snooze_until
 
     def is_scheduled_for(self, moment: datetime) -> bool:
-        return self.hour == moment.hour and self.minute == moment.minute
+        if self.hour != moment.hour or self.minute != moment.minute:
+            return False
+
+        if self.schedule_type == AlarmScheduleType.DAILY:
+            return True
+        if self.schedule_type == AlarmScheduleType.WEEKLY:
+            return moment.weekday() in self.weekly_days
+        if self.schedule_type == AlarmScheduleType.SPECIFIC_DATE:
+            return self.target_date == moment.date()
+        return False
 
     def effective_trigger_datetime(self, moment: datetime) -> Optional[datetime]:
         """Return the next datetime this alarm can trigger from the given moment."""
@@ -103,22 +139,34 @@ class Alarm:
                 return self.snooze_until
             return moment
 
-        scheduled_time = moment.replace(
-            hour=self.hour,
-            minute=self.minute,
-            second=0,
-            microsecond=0,
-        )
-        if scheduled_time <= moment:
-            scheduled_time += timedelta(days=1)
-        return scheduled_time
+        if self.schedule_type == AlarmScheduleType.DAILY:
+            return self._next_daily_trigger_datetime(moment)
+        if self.schedule_type == AlarmScheduleType.WEEKLY:
+            return self._next_weekly_trigger_datetime(moment)
+        if self.schedule_type == AlarmScheduleType.SPECIFIC_DATE:
+            return self._next_specific_date_trigger_datetime(moment)
+        return None
 
     def next_trigger_datetime(self, moment: datetime) -> Optional[datetime]:
         return self.effective_trigger_datetime(moment)
 
+    def has_same_definition(self, other: "Alarm") -> bool:
+        return (
+            self.hour == other.hour
+            and self.minute == other.minute
+            and self.label == other.label
+            and self.schedule_type == other.schedule_type
+            and self.weekly_days == other.weekly_days
+            and self.target_date == other.target_date
+        )
+
     def status_detail(self) -> str:
         if self.snooze_until is not None:
             return f"postergada hasta {self.snooze_until.strftime('%H:%M')}"
+        if self.schedule_type == AlarmScheduleType.WEEKLY:
+            return f"programada semanalmente para {self.formatted_time()}"
+        if self.schedule_type == AlarmScheduleType.SPECIFIC_DATE and self.target_date:
+            return f"programada para {self.target_date.isoformat()} {self.formatted_time()}"
         return f"programada para {self.formatted_time()}"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -130,6 +178,9 @@ class Alarm:
             "enabled": self.enabled,
             "last_trigger_key": self.last_trigger_key,
             "snooze_until": self.snooze_until.isoformat() if self.snooze_until else None,
+            "schedule_type": self.schedule_type.value,
+            "weekly_days": list(self.weekly_days),
+            "target_date": self.target_date.isoformat() if self.target_date else None,
         }
 
     @classmethod
@@ -142,10 +193,59 @@ class Alarm:
             enabled=cls._parse_enabled(data.get("enabled", True)),
             last_trigger_key=cls._normalize_trigger_key(data.get("last_trigger_key")),
             snooze_until=cls._parse_snooze_until(data.get("snooze_until")),
+            schedule_type=cls._parse_schedule_type(data.get("schedule_type")),
+            weekly_days=cls._parse_weekly_days(data.get("weekly_days", ())),
+            target_date=cls._parse_target_date(data.get("target_date")),
         )
 
     def _trigger_key(self, moment: datetime) -> str:
         return moment.strftime("%Y-%m-%d %H:%M")
+
+    def _normalize_schedule_fields(self) -> None:
+        self.schedule_type = self._parse_schedule_type(self.schedule_type)
+        self.weekly_days = self._parse_weekly_days(self.weekly_days)
+        self.target_date = self._parse_target_date(self.target_date)
+
+        if self.schedule_type != AlarmScheduleType.WEEKLY:
+            self.weekly_days = ()
+        if self.schedule_type != AlarmScheduleType.SPECIFIC_DATE:
+            self.target_date = None
+
+    def _next_daily_trigger_datetime(self, moment: datetime) -> datetime:
+        scheduled_time = self._datetime_on_date(moment, moment.date())
+        if scheduled_time <= moment:
+            scheduled_time += timedelta(days=1)
+        return scheduled_time
+
+    def _next_weekly_trigger_datetime(self, moment: datetime) -> Optional[datetime]:
+        if not self.weekly_days:
+            return None
+
+        for days_ahead in range(8):
+            candidate_date = moment.date() + timedelta(days=days_ahead)
+            if candidate_date.weekday() not in self.weekly_days:
+                continue
+
+            candidate = self._datetime_on_date(moment, candidate_date)
+            if candidate > moment:
+                return candidate
+        return None
+
+    def _next_specific_date_trigger_datetime(self, moment: datetime) -> Optional[datetime]:
+        if self.target_date is None:
+            return None
+
+        scheduled_time = self._datetime_on_date(moment, self.target_date)
+        if scheduled_time <= moment:
+            return None
+        return scheduled_time
+
+    def _datetime_on_date(self, moment: datetime, target_day: date) -> datetime:
+        return datetime.combine(
+            target_day,
+            datetime_time(hour=self.hour, minute=self.minute),
+            tzinfo=moment.tzinfo,
+        )
 
     @staticmethod
     def _parse_label(value: Any) -> str:
@@ -192,6 +292,53 @@ class Alarm:
         if parsed_value.tzinfo is None:
             return None
         return parsed_value
+
+    @staticmethod
+    def _parse_schedule_type(value: Any) -> AlarmScheduleType:
+        if isinstance(value, AlarmScheduleType):
+            return value
+
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            for schedule_type in AlarmScheduleType:
+                if normalized == schedule_type.value:
+                    return schedule_type
+
+        return AlarmScheduleType.DAILY
+
+    @staticmethod
+    def _parse_weekly_days(value: Any) -> Tuple[int, ...]:
+        if value is None or isinstance(value, (str, bytes)):
+            return ()
+
+        try:
+            values = tuple(value)
+        except TypeError:
+            return ()
+
+        normalized_days = set()
+        for item in values:
+            try:
+                weekday = int(item)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= weekday <= 6:
+                normalized_days.add(weekday)
+        return tuple(sorted(normalized_days))
+
+    @staticmethod
+    def _parse_target_date(value: Any) -> Optional[date]:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if not isinstance(value, str) or not value:
+            return None
+
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
 
     @staticmethod
     def _normalize_trigger_key(value: Any) -> Optional[str]:

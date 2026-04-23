@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Dict, Iterable, Optional, Tuple
 
-from models.alarm import Alarm
+from models.alarm import Alarm, AlarmScheduleType
 from services.sound_service import SoundService
 
 
@@ -27,25 +27,62 @@ class AlarmManager:
         self._alarms: Dict[int, Alarm] = {}
         self._next_id = 1
 
-    def create_alarm(self, hour: int, minute: int, label: str = "") -> Alarm:
+    def create_alarm(
+        self,
+        hour: int,
+        minute: int,
+        label: str = "",
+        schedule_type: AlarmScheduleType | str = AlarmScheduleType.DAILY,
+        weekly_days: Iterable[int] = (),
+        target_date: date | str | None = None,
+    ) -> Alarm:
         normalized_label = self._validate_alarm_data(hour, minute, label)
-        self._ensure_unique_alarm(hour, minute, normalized_label)
         alarm = Alarm(
             alarm_id=self._next_id,
             hour=hour,
             minute=minute,
             label=normalized_label,
             enabled=True,
+            schedule_type=schedule_type,
+            weekly_days=weekly_days,
+            target_date=target_date,
         )
+        self._ensure_unique_alarm(alarm)
         self._alarms[alarm.alarm_id] = alarm
         self._next_id += 1
         return alarm
 
-    def update_alarm(self, alarm_id: int, hour: int, minute: int, label: str = "") -> Alarm:
+    def update_alarm(
+        self,
+        alarm_id: int,
+        hour: int,
+        minute: int,
+        label: str = "",
+        schedule_type: AlarmScheduleType | str | None = None,
+        weekly_days: Iterable[int] = (),
+        target_date: date | str | None = None,
+    ) -> Alarm:
         alarm = self._require_alarm(alarm_id)
         normalized_label = self._validate_alarm_data(hour, minute, label)
-        self._ensure_unique_alarm(hour, minute, normalized_label, excluded_alarm_id=alarm_id)
+        next_schedule_type = alarm.schedule_type if schedule_type is None else schedule_type
+        next_weekly_days = alarm.weekly_days if schedule_type is None else weekly_days
+        next_target_date = alarm.target_date if schedule_type is None else target_date
+        candidate = Alarm(
+            alarm_id=alarm_id,
+            hour=hour,
+            minute=minute,
+            label=normalized_label,
+            enabled=alarm.enabled,
+            last_trigger_key=alarm.last_trigger_key,
+            snooze_until=alarm.snooze_until,
+            schedule_type=next_schedule_type,
+            weekly_days=next_weekly_days,
+            target_date=next_target_date,
+        )
+        self._ensure_unique_alarm(candidate, excluded_alarm_id=alarm_id)
         alarm.update_schedule(hour, minute, normalized_label)
+        if schedule_type is not None:
+            alarm.set_schedule_rule(schedule_type, weekly_days, target_date)
         return alarm
 
     def load_alarms(self, alarms: Iterable[Alarm]) -> None:
@@ -56,7 +93,7 @@ class AlarmManager:
             if alarm.alarm_id in self._alarms:
                 continue
             try:
-                self._ensure_unique_alarm(alarm.hour, alarm.minute, alarm.label)
+                self._ensure_unique_alarm(alarm)
             except ValueError:
                 continue
             self._alarms[alarm.alarm_id] = alarm
@@ -168,13 +205,11 @@ class AlarmManager:
 
     def _ensure_unique_alarm(
         self,
-        hour: int,
-        minute: int,
-        label: str,
+        candidate: Alarm,
         excluded_alarm_id: Optional[int] = None,
     ) -> None:
         for alarm in self._alarms.values():
             if alarm.alarm_id == excluded_alarm_id:
                 continue
-            if alarm.hour == hour and alarm.minute == minute and alarm.label == label:
+            if alarm.has_same_definition(candidate):
                 raise ValueError("Ya existe una alarma con la misma hora y etiqueta.")
