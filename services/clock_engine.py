@@ -22,14 +22,25 @@ class ClockEngine:
         return datetime.now(timezone_info)
 
     def calculate_hand_angles(self, moment: datetime) -> Dict[str, float]:
-        second_value = moment.second + moment.microsecond / 1_000_000
-        minute_value = moment.minute + second_value / 60
-        hour_value = (moment.hour % 12) + minute_value / 60
+        """Return analog hand angles in degrees, where 0 degrees points to 12.
+
+        A real analog clock moves continuously: seconds include fractional
+        microseconds, minutes include the elapsed fraction of the current minute,
+        and hours include the elapsed fraction of the current hour.
+        """
+
+        precise_second = moment.second + moment.microsecond / 1_000_000
+        precise_minute = moment.minute + precise_second / 60
+        precise_hour = (moment.hour % 12) + precise_minute / 60
+
+        second_angle = precise_second * 6
+        minute_angle = precise_minute * 6
+        hour_angle = precise_hour * 30
 
         return {
-            "hour": hour_value * 30,
-            "minute": minute_value * 6,
-            "second": second_value * 6,
+            "hour": hour_angle,
+            "minute": minute_angle,
+            "second": second_angle,
         }
 
     def iter_markers_forward(self) -> Generator[ClockMarker, None, None]:
