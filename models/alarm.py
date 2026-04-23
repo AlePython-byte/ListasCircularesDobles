@@ -9,6 +9,8 @@ from typing import Any, Dict, Optional
 class Alarm:
     """Alarm value object with validation, trigger, and snooze behavior."""
 
+    MAX_LABEL_LENGTH = 40
+
     alarm_id: int
     hour: int
     minute: int
@@ -21,7 +23,7 @@ class Alarm:
         if self.alarm_id <= 0:
             raise ValueError("Alarm id must be greater than zero.")
         self._validate_time(self.hour, self.minute)
-        self.label = self.label.strip()
+        self.label = self.normalize_label(self.label)
         self.last_trigger_key = self._normalize_trigger_key(self.last_trigger_key)
         if self.snooze_until is not None and self.snooze_until.tzinfo is None:
             self.snooze_until = None
@@ -30,7 +32,7 @@ class Alarm:
         self._validate_time(hour, minute)
         self.hour = hour
         self.minute = minute
-        self.label = label.strip()
+        self.label = self.normalize_label(label)
         self.last_trigger_key = None
         self.clear_snooze()
 
@@ -145,7 +147,19 @@ class Alarm:
     def _parse_label(value: Any) -> str:
         if value is None:
             return ""
-        return str(value).strip()
+        normalized = " ".join(str(value).split())
+        return normalized[: Alarm.MAX_LABEL_LENGTH]
+
+    @classmethod
+    def normalize_label(cls, value: Any) -> str:
+        raw_text = str(value).strip()
+        if not all(character.isprintable() for character in raw_text):
+            raise ValueError("Label contains invalid characters.")
+
+        normalized = " ".join(raw_text.split())
+        if len(normalized) > cls.MAX_LABEL_LENGTH:
+            raise ValueError("Label is too long.")
+        return normalized
 
     @staticmethod
     def _parse_enabled(value: Any) -> bool:

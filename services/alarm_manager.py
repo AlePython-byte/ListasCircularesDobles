@@ -15,11 +15,13 @@ class AlarmManager:
         self._next_id = 1
 
     def create_alarm(self, hour: int, minute: int, label: str = "") -> Alarm:
+        normalized_label = self._validate_alarm_data(hour, minute, label)
+        self._ensure_unique_alarm(hour, minute, normalized_label)
         alarm = Alarm(
             alarm_id=self._next_id,
             hour=hour,
             minute=minute,
-            label=label.strip(),
+            label=normalized_label,
             enabled=True,
         )
         self._alarms[alarm.alarm_id] = alarm
@@ -28,7 +30,9 @@ class AlarmManager:
 
     def update_alarm(self, alarm_id: int, hour: int, minute: int, label: str = "") -> Alarm:
         alarm = self._require_alarm(alarm_id)
-        alarm.update_schedule(hour, minute, label)
+        normalized_label = self._validate_alarm_data(hour, minute, label)
+        self._ensure_unique_alarm(hour, minute, normalized_label, excluded_alarm_id=alarm_id)
+        alarm.update_schedule(hour, minute, normalized_label)
         return alarm
 
     def load_alarms(self, alarms: Iterable[Alarm]) -> None:
@@ -103,3 +107,29 @@ class AlarmManager:
         if alarm is None:
             raise ValueError("Alarm does not exist.")
         return alarm
+
+    def _validate_alarm_data(self, hour: int, minute: int, label: str) -> str:
+        if not 0 <= hour <= 23:
+            raise ValueError("La hora debe estar entre 0 y 23.")
+        if not 0 <= minute <= 59:
+            raise ValueError("El minuto debe estar entre 0 y 59.")
+
+        try:
+            return Alarm.normalize_label(label)
+        except ValueError:
+            raise ValueError(
+                f"La etiqueta debe tener maximo {Alarm.MAX_LABEL_LENGTH} caracteres."
+            ) from None
+
+    def _ensure_unique_alarm(
+        self,
+        hour: int,
+        minute: int,
+        label: str,
+        excluded_alarm_id: Optional[int] = None,
+    ) -> None:
+        for alarm in self._alarms.values():
+            if alarm.alarm_id == excluded_alarm_id:
+                continue
+            if alarm.hour == hour and alarm.minute == minute and alarm.label == label:
+                raise ValueError("Ya existe una alarma con la misma hora y etiqueta.")

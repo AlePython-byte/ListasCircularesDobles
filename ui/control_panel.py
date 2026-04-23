@@ -21,6 +21,7 @@ class ControlPanel(ttk.Frame):
     SECTION_GAP = 12
     CONTENT_WRAP_LENGTH = 305
     ALARM_TABLE_HEIGHT = 6
+    ALARM_LABEL_MAX_LENGTH = Alarm.MAX_LABEL_LENGTH
 
     def __init__(
         self,
@@ -92,9 +93,17 @@ class ControlPanel(ttk.Frame):
         if not 0 <= minute <= 59:
             raise ValueError("El minuto debe estar entre 0 y 59.")
 
+        try:
+            label = Alarm.normalize_label(self._label_var.get())
+        except ValueError:
+            raise ValueError(
+                f"La etiqueta debe tener maximo {self.ALARM_LABEL_MAX_LENGTH} caracteres."
+            ) from None
+
         self._hour_var.set(f"{hour:02d}")
         self._minute_var.set(f"{minute:02d}")
-        return hour, minute, self._label_var.get().strip()
+        self._label_var.set(label)
+        return hour, minute, label
 
     def set_alarm_summary(self, text: str) -> None:
         self._alarm_summary_var.set(text)
@@ -289,7 +298,16 @@ class ControlPanel(ttk.Frame):
             columnspan=2,
             sticky="w",
         )
-        ttk.Entry(form_frame, textvariable=self._label_var).grid(
+        label_validation = self.register(self._is_label_text_allowed)
+        label_invalid_command = self.register(self._show_label_validation_message)
+        label_entry = ttk.Entry(
+            form_frame,
+            textvariable=self._label_var,
+            validate="key",
+            validatecommand=(label_validation, "%P"),
+            invalidcommand=label_invalid_command,
+        )
+        label_entry.grid(
             row=3,
             column=0,
             columnspan=2,
@@ -537,7 +555,7 @@ class ControlPanel(ttk.Frame):
         self._on_timezone_change(self._timezone_var.get())
 
     def _bind_alarm_validation(self) -> None:
-        for variable in (self._hour_var, self._minute_var):
+        for variable in (self._hour_var, self._minute_var, self._label_var):
             variable.trace_add("write", lambda *_args: self._update_alarm_button_states())
 
     def _update_alarm_button_states(self) -> None:
@@ -557,7 +575,28 @@ class ControlPanel(ttk.Frame):
             return False
         if not hour.isdigit() or not minute.isdigit():
             return False
-        return 0 <= int(hour) <= 23 and 0 <= int(minute) <= 59
+        return (
+            0 <= int(hour) <= 23
+            and 0 <= int(minute) <= 59
+            and self._is_label_value_valid()
+        )
+
+    def _is_label_text_allowed(self, proposed_value: str) -> bool:
+        if len(proposed_value) > self.ALARM_LABEL_MAX_LENGTH:
+            return False
+        return all(character.isprintable() for character in proposed_value)
+
+    def _show_label_validation_message(self) -> None:
+        self.set_message(
+            f"La etiqueta debe tener maximo {self.ALARM_LABEL_MAX_LENGTH} caracteres."
+        )
+
+    def _is_label_value_valid(self) -> bool:
+        try:
+            Alarm.normalize_label(self._label_var.get())
+        except ValueError:
+            return False
+        return True
 
     def _set_button_state(self, button: ttk.Button | None, enabled: bool) -> None:
         if button is not None:

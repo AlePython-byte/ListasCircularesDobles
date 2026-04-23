@@ -197,8 +197,8 @@ class ClockApp(tk.Tk):
     def _add_alarm(self, hour: int, minute: int, label: str) -> None:
         try:
             alarm = self._alarm_manager.create_alarm(hour, minute, label)
-        except ValueError:
-            self._control_panel.set_message("La alarma no es valida.")
+        except ValueError as error:
+            self._control_panel.set_message(str(error) or "La alarma no es valida.")
             return
 
         self._refresh_alarm_panel()
@@ -210,8 +210,8 @@ class ClockApp(tk.Tk):
     def _update_alarm(self, alarm_id: int, hour: int, minute: int, label: str) -> bool:
         try:
             alarm = self._alarm_manager.update_alarm(alarm_id, hour, minute, label)
-        except ValueError:
-            self._control_panel.set_message("La alarma no es valida.")
+        except ValueError as error:
+            self._control_panel.set_message(str(error) or "La alarma no es valida.")
             return False
 
         self._refresh_alarm_panel()
