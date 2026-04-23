@@ -53,6 +53,12 @@ class AlarmManager:
         max_id = 0
 
         for alarm in alarms:
+            if alarm.alarm_id in self._alarms:
+                continue
+            try:
+                self._ensure_unique_alarm(alarm.hour, alarm.minute, alarm.label)
+            except ValueError:
+                continue
             self._alarms[alarm.alarm_id] = alarm
             max_id = max(max_id, alarm.alarm_id)
 

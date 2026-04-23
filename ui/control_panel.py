@@ -20,7 +20,7 @@ class ControlPanel(ttk.Frame):
     SECTION_PADDING = 12
     SECTION_GAP = 12
     CONTENT_WRAP_LENGTH = 305
-    ALARM_TABLE_HEIGHT = 6
+    ALARM_TABLE_HEIGHT = 11
     ALARM_LABEL_MAX_LENGTH = Alarm.MAX_LABEL_LENGTH
 
     def __init__(
@@ -212,12 +212,33 @@ class ControlPanel(ttk.Frame):
 
     def _build_alarms_tab(self, tab: ttk.Frame) -> None:
         tab.columnconfigure(0, weight=1)
-        tab.rowconfigure(2, weight=1)
+        tab.rowconfigure(0, weight=1)
+
+        alarm_notebook = ttk.Notebook(tab)
+        alarm_notebook.grid(row=0, column=0, sticky="nsew")
+
+        create_tab = ttk.Frame(alarm_notebook, padding=(12, 12, 12, 10))
+        scheduled_tab = ttk.Frame(alarm_notebook, padding=(12, 12, 12, 10))
+
+        alarm_notebook.add(create_tab, text="Crear / Editar")
+        alarm_notebook.add(scheduled_tab, text="Programadas")
+
+        self._build_alarm_create_tab(create_tab)
+        self._build_alarm_scheduled_tab(scheduled_tab)
+
+    def _build_alarm_create_tab(self, tab: ttk.Frame) -> None:
+        tab.columnconfigure(0, weight=1)
 
         self._build_timezone_frame(tab, row=0)
         self._build_alarm_form_frame(tab, row=1)
-        self._build_alarm_list_frame(tab, row=2)
-        self._build_status_frame(tab, row=3)
+        self._build_status_frame(tab, row=2)
+
+    def _build_alarm_scheduled_tab(self, tab: ttk.Frame) -> None:
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(0, weight=1)
+
+        self._build_alarm_list_frame(tab, row=0)
+        self._build_status_frame(tab, row=1)
 
     def _build_timezone_frame(self, parent: ttk.Frame, row: int) -> None:
         timezone_frame = ttk.LabelFrame(
@@ -546,7 +567,8 @@ class ControlPanel(ttk.Frame):
         self._label_var.set(alarm.label)
         self._set_alarm_form_mode(editing=True)
         self._selected_alarm_var.set(
-            f"Seleccionada: {alarm.formatted_time()} - {alarm.display_label()}"
+            f"Seleccionada: {alarm.formatted_time()} - {alarm.display_label()}. "
+            "Edite en Crear / Editar."
         )
         self.set_message(f"Editando alarma: {alarm.formatted_time()} - {alarm.display_label()}")
 
