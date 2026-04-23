@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import time
 import tkinter as tk
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from tkinter import ttk
 
-from models.alarm import Alarm
+from models.alarm import Alarm, AlarmScheduleType
 from models.clock_theme import ClockTheme
 from services.alarm_manager import AlarmManager
 from services.clock_engine import ClockEngine
@@ -194,9 +194,24 @@ class ClockApp(tk.Tk):
         )
         self.after(200, self._update_clock)
 
-    def _add_alarm(self, hour: int, minute: int, label: str) -> None:
+    def _add_alarm(
+        self,
+        hour: int,
+        minute: int,
+        label: str,
+        schedule_type: AlarmScheduleType,
+        weekly_days: tuple[int, ...],
+        target_date: date | None,
+    ) -> None:
         try:
-            alarm = self._alarm_manager.create_alarm(hour, minute, label)
+            alarm = self._alarm_manager.create_alarm(
+                hour,
+                minute,
+                label,
+                schedule_type=schedule_type,
+                weekly_days=weekly_days,
+                target_date=target_date,
+            )
         except ValueError as error:
             self._control_panel.set_message(str(error) or "La alarma no es valida.")
             return
@@ -207,9 +222,26 @@ class ClockApp(tk.Tk):
         )
         self._save_persisted_state()
 
-    def _update_alarm(self, alarm_id: int, hour: int, minute: int, label: str) -> bool:
+    def _update_alarm(
+        self,
+        alarm_id: int,
+        hour: int,
+        minute: int,
+        label: str,
+        schedule_type: AlarmScheduleType,
+        weekly_days: tuple[int, ...],
+        target_date: date | None,
+    ) -> bool:
         try:
-            alarm = self._alarm_manager.update_alarm(alarm_id, hour, minute, label)
+            alarm = self._alarm_manager.update_alarm(
+                alarm_id,
+                hour,
+                minute,
+                label,
+                schedule_type=schedule_type,
+                weekly_days=weekly_days,
+                target_date=target_date,
+            )
         except ValueError as error:
             self._control_panel.set_message(str(error) or "La alarma no es valida.")
             return False
@@ -413,9 +445,13 @@ class ClockApp(tk.Tk):
         if next_schedule is None:
             return "Proxima alarma: ninguna"
 
-        day_text = "hoy"
-        if next_schedule.trigger_datetime.date() > moment.date():
+        trigger_date = next_schedule.trigger_datetime.date()
+        if trigger_date == moment.date():
+            day_text = "hoy"
+        elif trigger_date == moment.date() + timedelta(days=1):
             day_text = "manana"
+        else:
+            day_text = trigger_date.strftime("%d/%m/%Y")
 
         snooze_text = " (postergada)" if next_schedule.is_snoozed else ""
         return (

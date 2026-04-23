@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from datetime import date
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Dict, Iterable, Optional, Tuple
 
-from models.alarm import Alarm
+from models.alarm import Alarm, AlarmScheduleType
 from models.clock_theme import ClockTheme
 from models.world_clock import WorldClockEntry, WorldTimeSnapshot
 from ui.countdown_timer_panel import CountdownTimerPanel
@@ -22,14 +23,36 @@ class ControlPanel(ttk.Frame):
     CONTENT_WRAP_LENGTH = 305
     ALARM_TABLE_HEIGHT = 11
     ALARM_LABEL_MAX_LENGTH = Alarm.MAX_LABEL_LENGTH
+    SCHEDULE_TYPE_LABELS = (
+        (AlarmScheduleType.DAILY, "Diaria"),
+        (AlarmScheduleType.WEEKLY, "Dias de la semana"),
+        (AlarmScheduleType.SPECIFIC_DATE, "Fecha especifica"),
+    )
+    WEEKDAY_LABELS = (
+        (0, "L"),
+        (1, "M"),
+        (2, "X"),
+        (3, "J"),
+        (4, "V"),
+        (5, "S"),
+        (6, "D"),
+    )
+    MIN_DATE_YEAR = 2000
+    MAX_DATE_YEAR = 2099
 
     def __init__(
         self,
         master: tk.Misc,
         themes: Iterable[ClockTheme],
         timezone_entries: Iterable[WorldClockEntry],
-        on_add_alarm: Callable[[int, int, str], None],
-        on_update_alarm: Callable[[int, int, int, str], bool],
+        on_add_alarm: Callable[
+            [int, int, str, AlarmScheduleType, Tuple[int, ...], date | None],
+            None,
+        ],
+        on_update_alarm: Callable[
+            [int, int, int, str, AlarmScheduleType, Tuple[int, ...], date | None],
+            bool,
+        ],
         on_enable_alarm: Callable[[int], None],
         on_disable_alarm: Callable[[int], None],
         on_delete_alarm: Callable[[int], None],
@@ -55,6 +78,17 @@ class ControlPanel(ttk.Frame):
         self._hour_var = tk.StringVar(value="07")
         self._minute_var = tk.StringVar(value="00")
         self._label_var = tk.StringVar(value="")
+        self._schedule_type_var = tk.StringVar(
+            value=self._schedule_label_for_type(AlarmScheduleType.DAILY)
+        )
+        self._weekday_vars: Dict[int, tk.BooleanVar] = {
+            weekday: tk.BooleanVar(value=False)
+            for weekday, _label in self.WEEKDAY_LABELS
+        }
+        today = date.today()
+        self._date_day_var = tk.StringVar(value=f"{today.day:02d}")
+        self._date_month_var = tk.StringVar(value=f"{today.month:02d}")
+        self._date_year_var = tk.StringVar(value=f"{today.year:04d}")
         self._alarm_form_help_var = tk.StringVar(
             value="Complete la hora en la zona seleccionada; la etiqueta es opcional."
         )
@@ -70,6 +104,8 @@ class ControlPanel(ttk.Frame):
         self._editing_alarm_id: Optional[int] = None
         self._alarm_tree: Optional[ttk.Treeview] = None
         self._alarm_form_frame: ttk.LabelFrame | None = None
+        self._weekly_fields_frame: ttk.Frame | None = None
+        self._date_fields_frame: ttk.Frame | None = None
         self._add_alarm_button: ttk.Button | None = None
         self._cancel_edit_button: ttk.Button | None = None
         self._enable_alarm_button: ttk.Button | None = None
@@ -81,7 +117,9 @@ class ControlPanel(ttk.Frame):
         self._set_alarm_form_mode(editing=False)
         self._update_alarm_button_states()
 
-    def get_alarm_values(self) -> Tuple[int, int, str]:
+    def get_alarm_values(
+        self,
+    ) -> Tuple[int, int, str, AlarmScheduleType, Tuple[int, ...], date | None]:
         raw_hour = self._hour_var.get().strip()
         raw_minute = self._minute_var.get().strip()
 
@@ -108,7 +146,23 @@ class ControlPanel(ttk.Frame):
         self._hour_var.set(f"{hour:02d}")
         self._minute_var.set(f"{minute:02d}")
         self._label_var.set(label)
-        return hour, minute, label
+        schedule_type = self._get_selected_schedule_type()
+        weekly_days: Tuple[int, ...] = ()
+        target_date: date | None = None
+
+        if schedule_type == AlarmScheduleType.WEEKLY:
+            weekly_days = tuple(
+                weekday
+                for weekday, variable in self._weekday_vars.items()
+                if variable.get()
+            )
+            if not weekly_days:
+                raise ValueError("Seleccione al menos un dia de la semana.")
+
+        if schedule_type == AlarmScheduleType.SPECIFIC_DATE:
+            target_date = self._get_target_date_value()
+
+        return hour, minute, label, schedule_type, weekly_days, target_date
 
     def set_alarm_summary(self, text: str) -> None:
         self._alarm_summary_var.set(text)
@@ -274,6 +328,13 @@ class ControlPanel(ttk.Frame):
         form_frame.columnconfigure((0, 1), weight=1)
         hour_validation = self._validator.create_range_command(0, 23, 2)
         minute_validation = self._validator.create_range_command(0, 59, 2)
+        day_validation = self._validator.create_range_command(1, 31, 2)
+        month_validation = self._validator.create_range_command(1, 12, 2)
+        year_validation = self._validator.create_range_command(
+            self.MIN_DATE_YEAR,
+            self.MAX_DATE_YEAR,
+            4,
+        )
 
         ttk.Label(
             form_frame,
@@ -281,8 +342,109 @@ class ControlPanel(ttk.Frame):
             wraplength=self.CONTENT_WRAP_LENGTH,
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
-        ttk.Label(form_frame, text="Hora").grid(row=1, column=0, sticky="w")
-        ttk.Label(form_frame, text="Minuto").grid(row=1, column=1, sticky="w")
+        ttk.Label(form_frame, text="Tipo de alarma").grid(
+            row=1,
+            column=0,
+            columnspan=2,
+            sticky="w",
+        )
+        schedule_type_combo = ttk.Combobox(
+            form_frame,
+            textvariable=self._schedule_type_var,
+            values=tuple(label for _schedule_type, label in self.SCHEDULE_TYPE_LABELS),
+            state="readonly",
+        )
+        schedule_type_combo.grid(
+            row=2,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(4, 10),
+        )
+        schedule_type_combo.bind("<<ComboboxSelected>>", self._handle_schedule_type_change)
+
+        self._weekly_fields_frame = ttk.Frame(form_frame)
+        self._weekly_fields_frame.columnconfigure(tuple(range(7)), weight=1)
+        ttk.Label(
+            self._weekly_fields_frame,
+            text="Dias",
+        ).grid(row=0, column=0, columnspan=7, sticky="w", pady=(0, 4))
+        for column, (weekday, label) in enumerate(self.WEEKDAY_LABELS):
+            ttk.Checkbutton(
+                self._weekly_fields_frame,
+                text=label,
+                variable=self._weekday_vars[weekday],
+            ).grid(row=1, column=column, sticky="w", padx=(0, 6))
+
+        self._date_fields_frame = ttk.Frame(form_frame)
+        self._date_fields_frame.columnconfigure((0, 1, 2), weight=1)
+        ttk.Label(self._date_fields_frame, text="Dia").grid(row=0, column=0, sticky="w")
+        ttk.Label(self._date_fields_frame, text="Mes").grid(row=0, column=1, sticky="w")
+        ttk.Label(self._date_fields_frame, text="Ano").grid(row=0, column=2, sticky="w")
+
+        day_spinbox = ttk.Spinbox(
+            self._date_fields_frame,
+            from_=1,
+            to=31,
+            textvariable=self._date_day_var,
+            width=6,
+            format="%02.0f",
+            validate="key",
+            validatecommand=(day_validation, "%P"),
+        )
+        day_spinbox.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(4, 0))
+
+        month_spinbox = ttk.Spinbox(
+            self._date_fields_frame,
+            from_=1,
+            to=12,
+            textvariable=self._date_month_var,
+            width=6,
+            format="%02.0f",
+            validate="key",
+            validatecommand=(month_validation, "%P"),
+        )
+        month_spinbox.grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(4, 0))
+
+        year_spinbox = ttk.Spinbox(
+            self._date_fields_frame,
+            from_=self.MIN_DATE_YEAR,
+            to=self.MAX_DATE_YEAR,
+            textvariable=self._date_year_var,
+            width=8,
+            format="%04.0f",
+            validate="key",
+            validatecommand=(year_validation, "%P"),
+        )
+        year_spinbox.grid(row=1, column=2, sticky="ew", pady=(4, 0))
+
+        self._validator.attach_focus_normalizer(
+            day_spinbox,
+            self._date_day_var,
+            1,
+            31,
+            self.set_message,
+            allow_empty_as_zero=False,
+        )
+        self._validator.attach_focus_normalizer(
+            month_spinbox,
+            self._date_month_var,
+            1,
+            12,
+            self.set_message,
+            allow_empty_as_zero=False,
+        )
+        self._validator.attach_focus_normalizer(
+            year_spinbox,
+            self._date_year_var,
+            self.MIN_DATE_YEAR,
+            self.MAX_DATE_YEAR,
+            self.set_message,
+            allow_empty_as_zero=False,
+        )
+
+        ttk.Label(form_frame, text="Hora").grid(row=4, column=0, sticky="w")
+        ttk.Label(form_frame, text="Minuto").grid(row=4, column=1, sticky="w")
 
         hour_spinbox = ttk.Spinbox(
             form_frame,
@@ -294,7 +456,7 @@ class ControlPanel(ttk.Frame):
             validate="key",
             validatecommand=(hour_validation, "%P"),
         )
-        hour_spinbox.grid(row=2, column=0, sticky="ew", padx=(0, 10), pady=(4, 10))
+        hour_spinbox.grid(row=5, column=0, sticky="ew", padx=(0, 10), pady=(4, 10))
 
         minute_spinbox = ttk.Spinbox(
             form_frame,
@@ -306,7 +468,7 @@ class ControlPanel(ttk.Frame):
             validate="key",
             validatecommand=(minute_validation, "%P"),
         )
-        minute_spinbox.grid(row=2, column=1, sticky="ew", pady=(4, 10))
+        minute_spinbox.grid(row=5, column=1, sticky="ew", pady=(4, 10))
         self._validator.attach_focus_normalizer(
             hour_spinbox,
             self._hour_var,
@@ -325,7 +487,7 @@ class ControlPanel(ttk.Frame):
         )
 
         ttk.Label(form_frame, text="Etiqueta").grid(
-            row=3,
+            row=6,
             column=0,
             columnspan=2,
             sticky="w",
@@ -340,7 +502,7 @@ class ControlPanel(ttk.Frame):
             invalidcommand=label_invalid_command,
         )
         label_entry.grid(
-            row=4,
+            row=7,
             column=0,
             columnspan=2,
             sticky="ew",
@@ -350,10 +512,10 @@ class ControlPanel(ttk.Frame):
             form_frame,
             text=f"Opcional, maximo {self.ALARM_LABEL_MAX_LENGTH} caracteres.",
             font=("Segoe UI", 8),
-        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
         form_button_frame = ttk.Frame(form_frame)
-        form_button_frame.grid(row=6, column=0, columnspan=2, sticky="ew")
+        form_button_frame.grid(row=9, column=0, columnspan=2, sticky="ew")
         form_button_frame.columnconfigure((0, 1), weight=1)
 
         self._add_alarm_button = ttk.Button(
@@ -369,6 +531,8 @@ class ControlPanel(ttk.Frame):
             command=self._cancel_alarm_edit,
         )
         self._cancel_edit_button.grid(row=0, column=1, sticky="ew")
+
+        self._update_schedule_fields()
 
     def _build_alarm_list_frame(self, parent: ttk.Frame, row: int) -> None:
         list_frame = ttk.LabelFrame(
@@ -513,16 +677,38 @@ class ControlPanel(ttk.Frame):
 
     def _handle_alarm_form_submit(self) -> None:
         try:
-            hour, minute, label = self.get_alarm_values()
+            (
+                hour,
+                minute,
+                label,
+                schedule_type,
+                weekly_days,
+                target_date,
+            ) = self.get_alarm_values()
         except ValueError as error:
             self.set_message(str(error))
             return
 
         if self._editing_alarm_id is None:
-            self._on_add_alarm(hour, minute, label)
+            self._on_add_alarm(
+                hour,
+                minute,
+                label,
+                schedule_type,
+                weekly_days,
+                target_date,
+            )
             return
 
-        updated = self._on_update_alarm(self._editing_alarm_id, hour, minute, label)
+        updated = self._on_update_alarm(
+            self._editing_alarm_id,
+            hour,
+            minute,
+            label,
+            schedule_type,
+            weekly_days,
+            target_date,
+        )
         if updated:
             self._exit_alarm_edit_mode(clear_selection=True)
 
@@ -565,6 +751,9 @@ class ControlPanel(ttk.Frame):
         self._hour_var.set(f"{alarm.hour:02d}")
         self._minute_var.set(f"{alarm.minute:02d}")
         self._label_var.set(alarm.label)
+        self._set_schedule_type(alarm.schedule_type)
+        self._set_weekly_days(alarm.weekly_days)
+        self._set_target_date(alarm.target_date)
         self._set_alarm_form_mode(editing=True)
         self._selected_alarm_var.set(
             f"Seleccionada: {alarm.formatted_time()} - {alarm.display_label()}. "
@@ -577,6 +766,9 @@ class ControlPanel(ttk.Frame):
         self._hour_var.set("07")
         self._minute_var.set("00")
         self._label_var.set("")
+        self._set_schedule_type(AlarmScheduleType.DAILY)
+        self._set_weekly_days(())
+        self._set_target_date(date.today())
         self._set_alarm_form_mode(editing=False)
         self._selected_alarm_var.set("Seleccione una alarma para editarla.")
 
@@ -598,11 +790,7 @@ class ControlPanel(ttk.Frame):
             self._alarm_form_frame.configure(
                 text="Editar alarma" if editing else "Agregar alarma"
             )
-        self._alarm_form_help_var.set(
-            "Modo edicion: ajuste la hora en la zona seleccionada."
-            if editing
-            else "Complete la hora en la zona seleccionada; la etiqueta es opcional."
-        )
+        self._update_alarm_form_help(editing)
         if self._add_alarm_button is not None:
             self._add_alarm_button.configure(
                 text="Guardar cambios" if editing else "Agregar alarma"
@@ -625,8 +813,23 @@ class ControlPanel(ttk.Frame):
     def _handle_timezone_change(self, _event: tk.Event) -> None:
         self._on_timezone_change(self._timezone_var.get())
 
+    def _handle_schedule_type_change(self, _event: tk.Event) -> None:
+        self._update_schedule_fields()
+        self._update_alarm_form_help(self._editing_alarm_id is not None)
+        self._update_alarm_button_states()
+
     def _bind_alarm_validation(self) -> None:
-        for variable in (self._hour_var, self._minute_var, self._label_var):
+        for variable in (
+            self._hour_var,
+            self._minute_var,
+            self._label_var,
+            self._schedule_type_var,
+            self._date_day_var,
+            self._date_month_var,
+            self._date_year_var,
+        ):
+            variable.trace_add("write", lambda *_args: self._update_alarm_button_states())
+        for variable in self._weekday_vars.values():
             variable.trace_add("write", lambda *_args: self._update_alarm_button_states())
 
     def _update_alarm_button_states(self) -> None:
@@ -646,11 +849,19 @@ class ControlPanel(ttk.Frame):
             return False
         if not hour.isdigit() or not minute.isdigit():
             return False
-        return (
+        if not (
             0 <= int(hour) <= 23
             and 0 <= int(minute) <= 59
             and self._is_label_value_valid()
-        )
+        ):
+            return False
+
+        schedule_type = self._get_selected_schedule_type()
+        if schedule_type == AlarmScheduleType.WEEKLY:
+            return any(variable.get() for variable in self._weekday_vars.values())
+        if schedule_type == AlarmScheduleType.SPECIFIC_DATE:
+            return self._is_target_date_valid()
+        return True
 
     def _is_label_text_allowed(self, proposed_value: str) -> bool:
         if len(proposed_value) > self.ALARM_LABEL_MAX_LENGTH:
@@ -679,3 +890,117 @@ class ControlPanel(ttk.Frame):
         if alarm.snooze_until is not None:
             return f"Postergada {alarm.snooze_until.strftime('%H:%M')}"
         return "Activa"
+
+    def _schedule_label_for_type(self, schedule_type: AlarmScheduleType) -> str:
+        for current_type, label in self.SCHEDULE_TYPE_LABELS:
+            if current_type == schedule_type:
+                return label
+        return self.SCHEDULE_TYPE_LABELS[0][1]
+
+    def _get_selected_schedule_type(self) -> AlarmScheduleType:
+        selected_label = self._schedule_type_var.get()
+        for schedule_type, label in self.SCHEDULE_TYPE_LABELS:
+            if label == selected_label:
+                return schedule_type
+        return AlarmScheduleType.DAILY
+
+    def _set_schedule_type(self, schedule_type: AlarmScheduleType) -> None:
+        self._schedule_type_var.set(self._schedule_label_for_type(schedule_type))
+        self._update_schedule_fields()
+
+    def _set_weekly_days(self, weekly_days: Iterable[int]) -> None:
+        selected_days = set(weekly_days)
+        for weekday, variable in self._weekday_vars.items():
+            variable.set(weekday in selected_days)
+
+    def _set_target_date(self, target_date_value: date | None) -> None:
+        selected_date = target_date_value or date.today()
+        self._date_day_var.set(f"{selected_date.day:02d}")
+        self._date_month_var.set(f"{selected_date.month:02d}")
+        self._date_year_var.set(f"{selected_date.year:04d}")
+
+    def _update_schedule_fields(self) -> None:
+        if self._weekly_fields_frame is None or self._date_fields_frame is None:
+            return
+
+        self._weekly_fields_frame.grid_remove()
+        self._date_fields_frame.grid_remove()
+
+        schedule_type = self._get_selected_schedule_type()
+        if schedule_type == AlarmScheduleType.WEEKLY:
+            self._weekly_fields_frame.grid(
+                row=3,
+                column=0,
+                columnspan=2,
+                sticky="ew",
+                pady=(0, 10),
+            )
+        elif schedule_type == AlarmScheduleType.SPECIFIC_DATE:
+            self._date_fields_frame.grid(
+                row=3,
+                column=0,
+                columnspan=2,
+                sticky="ew",
+                pady=(0, 10),
+            )
+
+    def _update_alarm_form_help(self, editing: bool) -> None:
+        schedule_type = self._get_selected_schedule_type()
+        if schedule_type == AlarmScheduleType.WEEKLY:
+            message = (
+                "Modo edicion: ajuste hora y dias de la semana."
+                if editing
+                else "Seleccione hora, etiqueta opcional y al menos un dia de la semana."
+            )
+        elif schedule_type == AlarmScheduleType.SPECIFIC_DATE:
+            message = (
+                "Modo edicion: ajuste la fecha y la hora en la zona seleccionada."
+                if editing
+                else "Seleccione fecha, hora y una etiqueta opcional para la alarma."
+            )
+        else:
+            message = (
+                "Modo edicion: ajuste la hora en la zona seleccionada."
+                if editing
+                else "Complete la hora en la zona seleccionada; la etiqueta es opcional."
+            )
+        self._alarm_form_help_var.set(message)
+
+    def _get_target_date_value(self) -> date:
+        raw_day = self._date_day_var.get().strip()
+        raw_month = self._date_month_var.get().strip()
+        raw_year = self._date_year_var.get().strip()
+
+        if raw_day == "" or raw_month == "" or raw_year == "":
+            raise ValueError("Complete la fecha de la alarma.")
+        if not raw_day.isdigit() or not raw_month.isdigit() or not raw_year.isdigit():
+            raise ValueError("Use valores numericos para la fecha.")
+
+        day = int(raw_day)
+        month = int(raw_month)
+        year = int(raw_year)
+        if not 1 <= day <= 31:
+            raise ValueError("El dia debe estar entre 1 y 31.")
+        if not 1 <= month <= 12:
+            raise ValueError("El mes debe estar entre 1 y 12.")
+        if not self.MIN_DATE_YEAR <= year <= self.MAX_DATE_YEAR:
+            raise ValueError(
+                f"El ano debe estar entre {self.MIN_DATE_YEAR} y {self.MAX_DATE_YEAR}."
+            )
+
+        try:
+            target_date = date(year, month, day)
+        except ValueError:
+            raise ValueError("La fecha especifica no es valida.") from None
+
+        self._date_day_var.set(f"{target_date.day:02d}")
+        self._date_month_var.set(f"{target_date.month:02d}")
+        self._date_year_var.set(f"{target_date.year:04d}")
+        return target_date
+
+    def _is_target_date_valid(self) -> bool:
+        try:
+            self._get_target_date_value()
+        except ValueError:
+            return False
+        return True
