@@ -182,7 +182,7 @@ class ClockApp(tk.Tk):
             self._notice_showing = False
 
         self._update_selected_time_labels(selected_moment)
-        self._control_panel.set_next_alarm_text(self._next_alarm_text())
+        self._control_panel.set_next_alarm_text(self._next_alarm_text(selected_moment))
         self._control_panel.update_world_times(
             self._world_time_service.get_snapshots(datetime.now().astimezone())
         )
@@ -303,7 +303,9 @@ class ClockApp(tk.Tk):
             self._control_panel.set_message("Zona horaria no encontrada.")
             return
 
-        self._update_selected_time_labels(self._get_selected_moment())
+        selected_moment = self._get_selected_moment()
+        self._update_selected_time_labels(selected_moment)
+        self._control_panel.set_next_alarm_text(self._next_alarm_text(selected_moment))
         self._control_panel.set_message(f"Zona seleccionada: {city}")
         self._save_persisted_state()
 
@@ -399,13 +401,14 @@ class ClockApp(tk.Tk):
         self._notice_showing = False
         self._control_panel.hide_alarm_notice()
 
-    def _refresh_alarm_panel(self) -> None:
+    def _refresh_alarm_panel(self, moment: datetime | None = None) -> None:
         self._control_panel.update_alarms(self._alarm_manager.get_alarms())
         self._control_panel.set_alarm_summary(self._alarm_manager.summary_text())
-        self._control_panel.set_next_alarm_text(self._next_alarm_text())
+        self._control_panel.set_next_alarm_text(self._next_alarm_text(moment))
 
-    def _next_alarm_text(self) -> str:
-        moment = self._get_selected_moment()
+    def _next_alarm_text(self, moment: datetime | None = None) -> str:
+        if moment is None:
+            moment = self._get_selected_moment()
         next_schedule = self._alarm_manager.next_alarm_schedule(moment)
         if next_schedule is None:
             return "Proxima alarma: ninguna"

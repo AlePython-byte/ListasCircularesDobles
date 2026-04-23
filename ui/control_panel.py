@@ -56,7 +56,7 @@ class ControlPanel(ttk.Frame):
         self._minute_var = tk.StringVar(value="00")
         self._label_var = tk.StringVar(value="")
         self._alarm_form_help_var = tk.StringVar(
-            value="Complete la hora; la etiqueta es opcional."
+            value="Complete la hora en la zona seleccionada; la etiqueta es opcional."
         )
         self._alarm_summary_var = tk.StringVar(value="No hay alarmas programadas.")
         self._next_alarm_var = tk.StringVar(value="Proxima alarma: ninguna")
@@ -577,9 +577,9 @@ class ControlPanel(ttk.Frame):
                 text="Editar alarma" if editing else "Agregar alarma"
             )
         self._alarm_form_help_var.set(
-            "Modo edicion: ajuste los datos y guarde los cambios."
+            "Modo edicion: ajuste la hora en la zona seleccionada."
             if editing
-            else "Complete la hora; la etiqueta es opcional."
+            else "Complete la hora en la zona seleccionada; la etiqueta es opcional."
         )
         if self._add_alarm_button is not None:
             self._add_alarm_button.configure(
